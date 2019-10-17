@@ -33,3 +33,28 @@ class PointObservationSet(ObservationSet, jpt.Serializable):
 
   def fromSerializable(_y):
     return PointObservationSet(_y)
+
+from pycocotools import mask as pcMask
+class MaskObservationSet(ObservationSet, jpt.Serializable):
+  """ Collections of masks at each time t. """
+
+  def __init__(self, ys):
+    """ Initialize from dictionary ys. """
+    super().__init__()
+    self._y = dict([ (int(t), yt) for t, yt in ys.items() ])
+    self.t0, self.tE = ( min(self._y.keys()), max(self._y.keys()) )
+    self.N = dict([ (t, len(yt['masks'])) for t, yt in self._y.items() ])
+    self.ts = sorted(self._y.keys())
+
+  def __getitem__(self, t):
+    """ Get all observations at time t. """
+    masks_enc, scores = ( self._y[t]['masks'], self._y[t]['scores'] )
+    if len(scores) == 0: return np.zeros((0, 0, 0), dtype=np.uint8), np.zeros(0)
+    masks = np.transpose(pcMask.decode(masks_enc), (2, 0, 1))
+    return masks, scores
+
+  def serializable(self):
+    return { self._magicKey: [self._y,], self._classKey: 'MaskObservationSet' }
+
+  def fromSerializable(_y):
+    return MaskObservationSet(_y)

@@ -3,9 +3,18 @@ import numpy as np, matplotlib.pyplot as plt
 import warnings
 import IPython as ip
 
+def testMask():
+  fname = '/Users/dshayden/Research/code/misc/marmoset_shape/marm_dets.gz'
+  y = jpt.io.masks_to_obs(fname)
+  jpt.io.save('test', {'y': y})
+  y_ = jpt.io.load('test')['y']
+
+  ip.embed()
+
 def testViz():
   fname = 'data/datasets/k22/gt.csv'
   y, z = jpt.io.mot15_point2d_to_assoc_unique(fname)
+  ip.embed()
   jpt.viz.plot_points2d_global(y)
 
   x = { }

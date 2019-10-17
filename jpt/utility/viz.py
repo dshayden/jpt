@@ -13,7 +13,7 @@ def plot_tracks2d_global(w):
       plt.plot(xs, ys, color=colors[cind])
       prevX = xtk
 
-def plot_points2d_global(y): 
+def plot_points2d_global(y):
   """ Plot first two dims of all points in ObservationSet y. """
   color = 'k'
   for t in y.ts: plt.scatter(y[t][:,0], y[t][:,1], color=color, s=5, zorder=10)

@@ -56,8 +56,14 @@ def point_hypothesis_to_mot15_point2d(fname, w):
       print(fs, file=fid)
   fid.close()
 
+def masks_to_obs(fname, startTime=0):
+  masks = du.load(fname)
+  yMasks = dict([ (t+startTime, masks[t]) for t in range(len(masks))])
+  return jpt.MaskObservationSet(yMasks)
+
 __fromBytesObjects = {
   'PointObservationSet': jpt.PointObservationSet,
+  'MaskObservationSet': jpt.MaskObservationSet,
   'UniqueBijectiveAssociation': jpt.UniqueBijectiveAssociation,
   'PointHypothesis': jpt.PointHypothesis
 }
