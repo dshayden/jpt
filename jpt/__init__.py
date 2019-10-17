@@ -2,7 +2,7 @@ from .utility.serializable import Serializable
 
 from .tracking.association import UniqueBijectiveAssociation
 from .tracking.hypothesis import PointHypothesis
-from .tracking.observation import ObservationSet, PointObservationSet
+from .tracking.observation import PointObservationSet
 
 from .inference import kalman, proposals
-from .utility import io
+from .utility import io, viz

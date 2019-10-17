@@ -33,15 +33,3 @@ class PointObservationSet(ObservationSet, jpt.Serializable):
 
   def fromSerializable(_y):
     return PointObservationSet(_y)
-
-
-  # def serialize(self):
-  #   # return json.dumps(dict( [('_y', _yList),] ))
-  #   None
-  #
-  # # def serialize(self): 
-  #   _yList = dict( (t, v.tolist()) for t, v in self._y.items() )
-  #   return json.dumps(dict( [('_y', _yList),] ))
-  #
-  # def deserialize(txt):
-  #   return PointObservationSet(json.loads(txt)['_y'])
