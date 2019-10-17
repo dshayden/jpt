@@ -1,3 +1,4 @@
+import jpt
 from abc import ABC, abstractmethod
 
 class Hypothesis(ABC):
@@ -21,7 +22,7 @@ class Hypothesis(ABC):
     pass
 
 import numpy as np
-class PointHypothesis(Hypothesis):
+class PointHypothesis(Hypothesis, jpt.Serializable):
   def __init__(self, x):
     # x must be of the form { k: {t: x_tk, ...}, ... }
     #   k, t must be integers. x_tk can be any type (ndarray, tuple, etc.)
@@ -42,3 +43,12 @@ class PointHypothesis(Hypothesis):
   def __getitem__(self, t):
     # return dict of {k: x_tk} at time t
     return dict([ (k, self._x[k][t]) for k in self.ks if t in self._x[k] ])
+  
+  def serializable(self):
+    # return dict with appropriate keys for serialization that does't depend on
+    # anything more than basic or numpy types
+    return { self._magicKey: [self._x,], self._classKey: 'PointHypothesis' }
+
+  def fromSerializable(_x):
+    # return PointHypothesis loaded from args pulled from serialized data
+    return PointHypothesis(_x)

@@ -22,7 +22,18 @@ def testIO():
       x[int(k)][t] = y2[t][j]
  
   w = jpt.PointHypothesis(x)
-  jpt.io.point_hypothesis_to_mot15_point2d('test.csv', w)
+  # jpt.io.point_hypothesis_to_mot15_point2d('test.csv', w)
+
+  # test save
+  # a = {1: 'a', '2': 'b'}
+  # jpt.io.save('test_save', a)
+  # a_ = jpt.io.load('test_save')
+
+  jpt.io.save('test_save', {'w': w})
+  w_ = jpt.io.load('test_save')['w']
+
+  jpt.io.save('test_save', {'y': y})
+  y_ = jpt.io.load('test_save')['y']
 
   ip.embed()
 

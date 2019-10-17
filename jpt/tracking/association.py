@@ -1,5 +1,6 @@
+import jpt
 from abc import ABC, abstractmethod
-from .observation import ObservationSet
+# from .observation import ObservationSet
 from warnings import warn
 
 class Association(ABC):
@@ -10,7 +11,8 @@ class Association(ABC):
   """
 
   def __init__(self, y):
-    assert isinstance(y, ObservationSet)
+    # assert isinstance(y, ObservationSet)
+    assert isinstance(y, jpt.ObservationSet)
     self.t0, self.tE, self.N, self.ts, self.ks = (-1, -1, {}, [], [])
     super().__init__()
 
@@ -25,7 +27,7 @@ class Association(ABC):
     pass 
 
 import numpy as np
-class UniqueBijectiveAssociation(Association):
+class UniqueBijectiveAssociation(Association, ):
   """ Association event with constraints.
   
   Constraints:

@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import jpt
 
 class ObservationSet(ABC):
   """ Batch collection of observations. """
@@ -12,7 +13,7 @@ class ObservationSet(ABC):
     pass
 
 import numpy as np
-class PointObservationSet(ObservationSet):
+class PointObservationSet(ObservationSet, jpt.Serializable):
   """ Collections of variable quantity of D-dim points at each time t. """
 
   def __init__(self, ys):
@@ -26,3 +27,21 @@ class PointObservationSet(ObservationSet):
   def __getitem__(self, t):
     """ Get all observations at time t. """
     return self._y[t]
+
+  def serializable(self):
+    return { self._magicKey: [self._y,], self._classKey: 'PointObservationSet' }
+
+  def fromSerializable(_y):
+    return PointObservationSet(_y)
+
+
+  # def serialize(self):
+  #   # return json.dumps(dict( [('_y', _yList),] ))
+  #   None
+  #
+  # # def serialize(self): 
+  #   _yList = dict( (t, v.tolist()) for t, v in self._y.items() )
+  #   return json.dumps(dict( [('_y', _yList),] ))
+  #
+  # def deserialize(txt):
+  #   return PointObservationSet(json.loads(txt)['_y'])
