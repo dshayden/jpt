@@ -1,6 +1,5 @@
 import jpt
 from abc import ABC, abstractmethod
-# from .observation import ObservationSet
 from warnings import warn
 
 class Association(ABC):
@@ -10,9 +9,7 @@ class Association(ABC):
   which may be resampled over time).
   """
 
-  def __init__(self, y):
-    # assert isinstance(y, ObservationSet)
-    assert isinstance(y, jpt.ObservationSet)
+  def __init__(self):
     self.t0, self.tE, self.N, self.ts, self.ks = (-1, -1, {}, [], [])
     super().__init__()
 
@@ -27,22 +24,22 @@ class Association(ABC):
     pass 
 
 import numpy as np
-class UniqueBijectiveAssociation(Association, ):
+class UniqueBijectiveAssociation(Association, jpt.Serializable):
   """ Association event with constraints.
   
   Constraints:
     All observations must have an associated target.
     All targets must have no more than one association at each time.
   """
-  def __init__(self, y, zs):
-    """ ObservationSet y, assignments dictionary zs { t: (n_t,) }. """
-    super().__init__(y)
+  def __init__(self, N, zs):
+    """ dict N {t: n_t }, assignments dictionary zs { t: (n_t,) }. """
+    super().__init__()
     self._z = dict([ (int(t), np.asarray(zt, dtype=np.int))
       for t, zt in zs.items() ])
-    assert set(self._z) == set(y.N) # check that keys are all same
+    assert set(self._z) == set(N) # check that keys are all same
     for t in self._z.keys():
-      assert self._z[t].ndim == 1 and len(self._z[t]) == y.N[t]
-    self.N = y.N
+      assert self._z[t].ndim == 1 and len(self._z[t]) == N[t]
+    self.N = N
     self.t0, self.tE = ( min(self.N.keys()), max(self.N.keys()) )
     self.ts = sorted(self.N.keys())
     self.__build_lut()
@@ -79,6 +76,17 @@ class UniqueBijectiveAssociation(Association, ):
           return False
 
     return True
+
+  def serializable(self):
+    # return dict with appropriate keys for serialization that does't depend on
+    # anything more than basic or numpy types
+    return { self._magicKey: [self.N, self._z], 
+      self._classKey: 'UniqueBijectiveAssociation'
+    }
+
+  def fromSerializable(N, _z):
+    # return PointHypothesis loaded from args pulled from serialized data
+    return UniqueBijectiveAssociation(N, _z)
 
   def __getitem__(self, t):
     """ Get all associations at time t as an array with values in ks.

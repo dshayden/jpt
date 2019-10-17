@@ -45,7 +45,7 @@ def mot15_point2d_to_assoc_unique(fname):
     for j in range(len(z[t])):
       if z[t][j] == -1: z[t][j] = nextK; nextK += 1
   
-  z = jpt.UniqueBijectiveAssociation(y, z)
+  z = jpt.UniqueBijectiveAssociation(y.N, z)
   return y, z
 
 def point_hypothesis_to_mot15_point2d(fname, w):
