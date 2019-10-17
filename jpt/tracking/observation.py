@@ -13,7 +13,7 @@ class ObservationSet(ABC):
     pass
 
 import numpy as np
-class PointObservationSet(ObservationSet, jpt.Serializable):
+class NdObservationSet(ObservationSet, jpt.Serializable):
   """ Collections of variable quantity of D-dim points at each time t. """
 
   def __init__(self, ys):
@@ -29,10 +29,10 @@ class PointObservationSet(ObservationSet, jpt.Serializable):
     return self._y[t]
 
   def serializable(self):
-    return { self._magicKey: [self._y,], self._classKey: 'PointObservationSet' }
+    return { self._magicKey: [self._y,], self._classKey: 'NdObservationSet' }
 
   def fromSerializable(_y):
-    return PointObservationSet(_y)
+    return NdObservationSet(_y)
 
 from pycocotools import mask as pcMask
 class MaskObservationSet(ObservationSet, jpt.Serializable):

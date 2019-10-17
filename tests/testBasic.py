@@ -70,7 +70,7 @@ def testMisc():
 
   # data = {1: np.zeros((2,2)), 2: np.ones((2,3))}
   data = {1: [[2.,3.], [4.,5.]], 2: [6., 7.]}
-  y = jpt.PointObservationSet(data)
+  y = jpt.NdObservationSet(data)
   z = jpt.UniqueBijectiveAssociation(y.N, {1: [2,3], 2: [3,]})
   x = jpt.PointHypothesis({
     2: { 1: np.array([2.25, 2.75]) },

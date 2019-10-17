@@ -14,7 +14,7 @@ def mot15_point2d_to_obs(fname):
     dft = df[df.Frame == t]
     obs = dft[ ['BBx', 'BBy'] ].values
     y[t] = obs
-  return jpt.PointObservationSet(y)
+  return jpt.NdObservationSet(y)
 
 # Load 2D bbox from MOT 2015 formatted file
 def mot15_bbox_to_obs(fname):
@@ -25,7 +25,7 @@ def mot15_bbox_to_obs(fname):
     dft = df[df.Frame == t]
     obs = dft[ ['BBx', 'BBy', 'BBw', 'BBh'] ].values
     y[t] = obs
-  return jpt.PointObservationSet(y)
+  return jpt.NdObservationSet(y)
 
 def mot15_point2d_to_assoc_unique(fname):
   df = pd.read_csv(fname, names=__mot2015)
@@ -37,7 +37,7 @@ def mot15_point2d_to_assoc_unique(fname):
     obs = dft[ ['ID', 'BBx', 'BBy'] ].values
     y[t] = obs[:,1:]
     z[t] = obs[:,0].astype(np.int)
-  y = jpt.PointObservationSet(y)
+  y = jpt.NdObservationSet(y)
 
   uniqK = df.ID.unique()
   nextK = max(uniqK)+1
@@ -62,7 +62,7 @@ def masks_to_obs(fname, startTime=0):
   return jpt.MaskObservationSet(yMasks)
 
 __fromBytesObjects = {
-  'PointObservationSet': jpt.PointObservationSet,
+  'NdObservationSet': jpt.NdObservationSet,
   'MaskObservationSet': jpt.MaskObservationSet,
   'UniqueBijectiveAssociation': jpt.UniqueBijectiveAssociation,
   'PointHypothesis': jpt.PointHypothesis

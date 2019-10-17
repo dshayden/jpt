@@ -23,7 +23,7 @@ def plot_points2d_global(y):
   plt.gca().set_aspect('equal', 'box')
 
 def limits(y, i, expand=0.15):
-  """ Get limits of PointObservationSet y along axis i with mild expansion. """
+  """ Get limits of NdObservationSet y along axis i with mild expansion. """
   vmin = np.min([np.min(y[t][:,i]) for t in y.ts])
   vmax = np.max([np.max(y[t][:,i]) for t in y.ts])
   delta = np.abs(vmax - vmin) * (expand/2.0)
