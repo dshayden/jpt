@@ -2,6 +2,24 @@ import numpy as np, matplotlib.pyplot as plt
 import itertools
 import du
 
+def plot_masks(y):
+  """ Plot MaskObservationSets """
+  colors = du.diffcolors(max(y.N.keys()), alpha=0.5)
+  # import IPython as ip; ip.embed()
+  def show(t):
+    mt, st = y[t]
+    if y.N[t] == 0: return
+    im = np.zeros(mt.shape[1:] + (3,), dtype=np.uint8)
+    for mtk, cind in zip(mt, range(y.N[t])):
+      im = du.DrawOnImage(im, np.where(mtk > 0), colors[cind])
+    plt.title(t)
+    plt.xticks([])
+    plt.yticks([])
+    plt.imshow(im)
+    # if len(st) > 0: plt.imshow(np.sum(mt, axis=0).astype(np.bool))
+  du.ViewPlots(y.ts, show)
+  plt.show()
+
 def plot_tracks2d_global(w):
   """ Plot first two dims of all objects in PointHypothesis w. """
   colors = du.diffcolors(len(w.ks), alpha=0.5)

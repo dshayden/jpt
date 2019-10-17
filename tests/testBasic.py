@@ -6,10 +6,12 @@ import IPython as ip
 def testMask():
   fname = '/Users/dshayden/Research/code/misc/marmoset_shape/marm_dets.gz'
   y = jpt.io.masks_to_obs(fname)
-  jpt.io.save('test', {'y': y})
-  y_ = jpt.io.load('test')['y']
+  jpt.viz.plot_masks(y)
+  plt.show()
 
-  ip.embed()
+  # jpt.io.save('test', {'y': y})
+  # y_ = jpt.io.load('test')['y']
+  # ip.embed()
 
 def testViz():
   fname = 'data/datasets/k22/gt.csv'
