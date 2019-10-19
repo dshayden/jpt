@@ -1,8 +1,14 @@
 from context import jpt
 import numpy as np, matplotlib.pyplot as plt
-import warnings
+import warnings, du
 import IPython as ip
 
+def testImage():
+  imgDir = '/Users/dshayden/Research/data/marmoset_segmentations/curated/images'
+  y = jpt.io.imgs_to_obs(imgDir)
+  du.save('test', {'y': y})
+  y_ = du.load('test')['y']
+  
 def testMask():
   fname = '/Users/dshayden/Research/code/misc/marmoset_shape/marm_dets.gz'
   y = jpt.io.masks_to_obs(fname)

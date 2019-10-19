@@ -61,8 +61,16 @@ def masks_to_obs(fname, startTime=0):
   yMasks = dict([ (t+startTime, masks[t]) for t in range(len(masks))])
   return jpt.MaskObservationSet(yMasks)
 
+def imgs_to_obs(imgDir, startTime=0):
+  """ Load an image directory to an observation set, one for each time. """
+  imgPaths = du.GetImgPaths(imgDir)
+  T, N_t = ( len(imgPaths), 1 )
+  yDict = { t + startTime: [ imgPaths[t], ] for t in range(T) }
+  return jpt.ImageObservationSet(yDict)
+
 __fromBytesObjects = {
   'NdObservationSet': jpt.NdObservationSet,
+  'ImageObservationSet': jpt.ImageObservationSet,
   'MaskObservationSet': jpt.MaskObservationSet,
   'UniqueBijectiveAssociation': jpt.UniqueBijectiveAssociation,
   'PointHypothesis': jpt.PointHypothesis
