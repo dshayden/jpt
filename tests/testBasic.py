@@ -3,6 +3,26 @@ import numpy as np, matplotlib.pyplot as plt
 import warnings, du
 import IPython as ip
 
+def testHMM():
+  fname = 'data/datasets/k22/gt.csv'
+  y, z = jpt.io.mot15_point2d_to_assoc_unique(fname)
+  
+  def val(t, k):
+    j = z.to(k)[t]
+    x = y_ = y[t][j]
+    return x, y_, j
+
+  def costxx(t1, x1, t2, x2, k): return -1.0
+  def costxy(t, k, x, y): return -1.0
+
+  ks = z.ks
+  t0 = y.ts[0] * np.ones_like(ks)
+  ts = y.ts[1:]
+  perms, pi, Psi, psi = jpt.hmm.build(t0, ts, ks, val, costxx, costxy)
+
+  ip.embed()
+
+
 def testMerges():
   fname = 'data/datasets/k22/dets.csv'
   y, z = jpt.io.mot15_point2d_to_assoc_unique(fname)

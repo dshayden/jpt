@@ -1,7 +1,10 @@
 import numpy as np
 import IPython as ip
 
+
+
 def split(z):
+  """ Sample a random split proposal for UniqueBijectiveAssociation, z. """
   splits = possible_splits(z)
   if len(splits) == 0: return z, False, 0.0
   k1, t_ = splits[ np.random.choice(len(splits)) ]
@@ -19,6 +22,7 @@ def split(z):
   return z_, True, q_old_given_new - q_new_given_old
 
 def merge(z):
+  """ Sample a random merge proposal for UniqueBijectiveAssociation, z. """
   merges = possible_merges(z)
   if len(merges) == 0: return z, False, 0.0
   k1, k2 = merges[ np.random.choice(len(merges)) ]
@@ -37,6 +41,10 @@ def merge(z):
   return z_, True, q_old_given_new - q_new_given_old
 
 def possible_merges(z):
+  """ Construct all possible merges of UniqueBijectiveAssociation, z.
+    
+    Valid merges are all unique (k1, k2) which share no association at any time.
+  """
   merges = []
   for k1 in z.ks:
     for k2 in z.ks:
@@ -46,6 +54,11 @@ def possible_merges(z):
   return merges
 
 def possible_splits(z):
+  """ Construct all possible splits of UniqueBijectiveAssociation, z.
+    
+    Valid splits are all (k, t) for which target k has an association at time t
+    and at least one association at some time t' > t.
+  """
   splits = []
   for k in z.ks:
     for t in list(z.to(k).keys())[:-1]: splits.append( (k, t) )
