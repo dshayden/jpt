@@ -15,8 +15,7 @@ def build(t0, ts, ks, val, costxx, costxy):
     costxy (fcn): of the form cy = costxy(t,k,x,y)
 
   OUTPUT
-    perms (list): Index permutations of ks (HMM states are in range(nPerms))
-    Permutations of indices into ks that HMM states index into.
+    perms (list): Index into permutations of ks (HMM states are in range(nPerms))
     pi (nPerms): Prior
     Psi (T-1, nPerms, nPerms): Transition Matrix
     psi (T, nPerms): Observation Matrix

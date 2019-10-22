@@ -1,6 +1,7 @@
 import numpy as np
 from numpy.linalg import multi_dot as mdot
 import scipy.stats, argparse, du
+import scipy.linalg as sla
 from scipy.stats import multivariate_normal as mvn
 import IPython as ip
 
@@ -14,7 +15,6 @@ def opts(dy, dx, **kwargs):
   KEYWORD INPUTS
     F (ndarray, [dx, dx]): system model, default is random acceleration
     H (ndarray, [dy, dx]): measurement model
-    Qd (ndarray, [dy, dy]): velocity cov; only used if Q is not passed
     Q (ndarray, [dx, dx]): system noise
     R (ndarray, [dy, dy]): observation noise
 
@@ -39,10 +39,12 @@ def opts(dy, dx, **kwargs):
   o.H = kwargs.get('H', np.concatenate((eye, zer), axis=1))
 
   # system noise
-  Qd = kwargs.get('Qd', 20*np.eye(dy))
-  o.Q = kwargs.get('Q', np.concatenate((
-    np.concatenate((zer, zer), axis=1),
-    np.concatenate((zer,  Qd), axis=1))))
+  o.Q = kwargs.get('Q', sla.block_diag(2*eye, 10*eye))
+
+  # Qd = kwargs.get('Qd', 20*np.eye(dy))
+  # o.Q = kwargs.get('Q', np.concatenate((
+  #   np.concatenate((zer, zer), axis=1),
+  #   np.concatenate((zer,  Qd), axis=1))))
 
   # observation noise
   o.R = kwargs.get('R', 20*np.eye(dy))
@@ -197,7 +199,7 @@ def ffbs(o, x, y, x0=None):
   # x0: (mu, Sigma) tuple signifying prior dist; very broad if not specified
   assert np.all(np.linalg.eigvals(o.Q) > 0), "ffbs non-ergodic for degenerate Q"
   ts = [ t for t in y ]
-  if x0 is None: x0 = ( np.zeros(o.dx), 1e9*np.ones((o.dx,o.dx)) )
+  if x0 is None: x0 = ( np.zeros(o.dx), 1e9*np.eye(o.dx) )
   xPrev, PPrev = x0
 
   obs = [ (t, yt) for t, yt in y.items() ]
@@ -243,7 +245,7 @@ def ffbs(o, x, y, x0=None):
     mu, Sigma = inferNormalNormal(xs[idx+1], Q_, xf[idx], Pf[idx], H=H)
     xs[idx] = mvn.rvs(mu, Sigma)
     tNext = t
-  for idx, (t, _) in enumerate(obs): x[t] = xs[idx]
+  for idx, (t, _) in enumerate(obs): x[int(t)] = xs[idx]
   return x
 
 def predictive(o, x, t):

@@ -3,6 +3,19 @@ import numpy as np, matplotlib.pyplot as plt
 import warnings, du
 import IPython as ip
 
+def testPointInit():
+  ifile = 'data/datasets/k22/gt.csv'
+  Q = np.diag((.1, .1, 5, 5))
+  R = .1 * np.eye(2)
+  tracker = jpt.PointTracker
+  opts = tracker.opts(ifile, Q=Q, R=R)
+  y, w, z = tracker.init(opts)
+  jpt.viz.plot_tracks2d_global(w)
+  jpt.viz.plot_points2d_global(y)
+  plt.show()
+
+  ip.embed()
+
 def testHMM():
   fname = 'data/datasets/k22/gt.csv'
   y, z = jpt.io.mot15_point2d_to_assoc_unique(fname)
