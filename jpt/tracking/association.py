@@ -1,6 +1,7 @@
 import jpt
 from abc import ABC, abstractmethod
 from warnings import warn
+import copy
 
 class Association(ABC):
   """ Stores an association event of targets to observations.
@@ -45,6 +46,40 @@ class UniqueBijectiveAssociation(Association, jpt.Serializable):
     self.__build_lut()
     self.ks = sorted(self._K.keys())
     self.__check_consistency()
+
+  def edit(self, e, kind='tkj', inplace=False):   
+    """ Modify data associations with edit e.
+
+    INPUT
+      e: dictionary (if kind in ['tkj', 'tjk']) or list (if kind == 't')
+      kind (str): One of 'tkj', 'tjk' or 't'
+      inplace (bool): Edit in place or return a new association hypothesis.
+
+    OUTPUT
+      z (UniqueBijectiveAssociation): Copy of or reference
+
+    Edit e is either a dictionary (for kind = 'tkj' or 'tjk')
+    or a list (for kind = 't').
+
+    Edit kind is one of 'tkj', 'tjk', or 't'.
+
+    Inplace 
+    
+    """
+    z = self if inplace else copy.deepcopy(self)
+    if kind == 'tkj':
+      for (t, k), j in e.items(): z._z[t][j] = k
+      z.__build_lut()
+      z.ks = sorted(z._K.keys())
+      z.__check_consistency()
+    elif kind == 'tjk':
+      None
+    elif kind == 't':
+      None
+    else:
+      raise ValueError("kind must be one of 'tjk', 'tkj', or 't'")
+
+    return z
 
   def __build_lut(self):
     # build lookup table of k -> {ts}_k
@@ -99,3 +134,7 @@ class UniqueBijectiveAssociation(Association, jpt.Serializable):
   def to(self, k):
     """ Get all associations to option k as {t: j} for j an index into y[t] """
     return self._K[k]
+  
+  def next_k(self):
+    """ Return next valid index of a new unique label. """
+    return max(self.ks) + 1

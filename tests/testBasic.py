@@ -3,6 +3,19 @@ import numpy as np, matplotlib.pyplot as plt
 import warnings, du
 import IPython as ip
 
+def testMerges():
+  fname = 'data/datasets/k22/dets.csv'
+  y, z = jpt.io.mot15_point2d_to_assoc_unique(fname)
+  # fname = 'data/datasets/k22/gt.csv'
+  # y, z = jpt.io.mot15_point2d_to_assoc_unique(fname)
+  # merges = jpt.proposals.possible_merges(z)
+  # splits = jpt.proposals.possible_splits(z)
+  z_, valid, logq = jpt.proposals.merge(z)
+  z__, valid, logq__ = jpt.proposals.split(z_)
+  assert np.isclose(logq, -1*logq__)
+  
+  ip.embed()
+
 def testImage():
   imgDir = '/Users/dshayden/Research/data/marmoset_segmentations/curated/images'
   y = jpt.io.imgs_to_obs(imgDir)
@@ -15,9 +28,9 @@ def testMask():
   jpt.viz.plot_masks(y)
   plt.show()
 
-  # jpt.io.save('test', {'y': y})
-  # y_ = jpt.io.load('test')['y']
-  # ip.embed()
+  jpt.io.save('test', {'y': y})
+  y_ = jpt.io.load('test')['y']
+  ip.embed()
 
 def testViz():
   fname = 'data/datasets/k22/gt.csv'
