@@ -45,6 +45,9 @@ def opts(ifile, dy, dx, **kwargs):
   prior.H_mu0 = np.dot(param.H, prior.mu0)
   prior.H_Sigma0_H = np.dot(param.H, np.dot(prior.Sigma0, param.H.T))
   prior.H_Sigma0_H_inv = np.linalg.inv(prior.H_Sigma0_H)
+  if np.any(np.linalg.eigvals(prior.H_Sigma0_H_inv)):
+    prior.H_Sigma0_H_inv += 1e-6 * eye
+
 
   ## Q_k ~ IW(df0, S0)
   prior.df0 = kwargs.get('df0', 10)
@@ -99,20 +102,23 @@ def init2d(ifile):
   y, z = jpt.io.mot15_point2d_to_assoc_unique(ifile)
   kwargs = data_dependent_priors(y)
   o = opts(ifile, dy, dx, **kwargs)
+
+  # Shared initial parameters for all tracks
+  Q = o.prior.S0 / (o.prior.df0 - dx - 1)
+  R = 0.1 * Q[:dy,:dy]
+  mu0 = o.prior.mu0
+  param = dict(Q=Q, R=R, mu0=mu0)
   
-  # sample latent states for each target 
+  okf = jpt.kalman.opts(dy, dx, F=o.param.F, H=o.param.H, Q=Q, R=R)
 
+  np.seterr(all='raise')
+  x = {}
+  for k in z.ks:
+    xtks = jpt.kalman.ffbs(okf,
+      dict([(t, None) for t in z.to(k).keys()]), # requested latent
+      dict([(t, y[t][j]) for t, j in z.to(k).items()]), # available obs
+      x0=(mu0, o.prior.Sigma0)) 
+    x[int(k)] = ( param, xtks )
+  w = jpt.AnyTracks(x)
 
-  # todo: build latent states
-  #   each track has its own Q, R
-
-  return o, y, z
-
-  # x = {}
-  # for k in z.ks:
-  #   x[int(k)] = jpt.kalman.ffbs(o.kf,
-  #     dict([(t, None) for t in z.to(k).keys()]), # requested latent
-  #     dict([(t, y[t][j]) for t, j in z.to(k).items()]) # available obs
-  #   )
-  # w = jpt.AnyTracks(x)
-  # make hypothesis
+  return o, y, w, z

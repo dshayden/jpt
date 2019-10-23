@@ -5,9 +5,14 @@ import IPython as ip
 np.set_printoptions(precision=2, suppress=True)
 
 def testPointInit():
-  ifile = 'data/datasets/k22/gt.csv'
+  ifile = 'data/datasets/k22/dets.csv'
+  # ifile = 'data/datasets/k22/gt.csv'
   tracker = jpt.PointTracker
-  o, y, z = tracker.init2d(ifile)
+  o, y, w, z = tracker.init2d(ifile)
+
+  jpt.viz.plot_points2d_global(y)
+  jpt.viz.plot_tracks2d_global(w)
+  plt.show()
   ip.embed()
 
 
@@ -110,7 +115,7 @@ def testIO():
       x[int(k)][1][t] = y2[t][j]
  
   w = jpt.AnyTracks(x)
-  # jpt.io.point_hypothesis_to_mot15_point2d('test.csv', w)
+  # jpt.io.point_tracks_to_mot15_point2d('test.csv', w)
 
   # test save
   # a = {1: 'a', '2': 'b'}
