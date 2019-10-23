@@ -24,7 +24,7 @@ def plot_tracks2d_global(w):
   """ Plot first two dims of all objects in AnyTracks w. """
   colors = du.diffcolors(len(w.ks), alpha=0.5)
   for cind, k in enumerate(w.ks):
-    it = sorted(w.x()[k][1].items())
+    it = sorted(w.x[k][1].items())
     _, prevX = next(itertools.islice(it, 1))
     for t, xtk in it:
       xs, ys = ( (prevX[0], xtk[0]), (prevX[1], xtk[1]) )

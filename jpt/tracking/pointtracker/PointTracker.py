@@ -1,8 +1,12 @@
 import jpt
+from . import proposals
+
 import argparse
 import numpy as np, scipy.linalg as sla
 import du
+from scipy.stats import poisson
 from sklearn.neighbors import NearestNeighbors
+
 import IPython as ip
 
 def opts(ifile, dy, dx, **kwargs):
@@ -26,7 +30,6 @@ def opts(ifile, dy, dx, **kwargs):
   o = argparse.Namespace()
 
   prior, param = ( argparse.Namespace(), argparse.Namespace() )
-  # todo: make an alg or run Namespace for I/O details, etc?
 
   # set parameters
   eye, zer = ( np.eye(dy), np.zeros((dy, dy)) )
@@ -36,18 +39,15 @@ def opts(ifile, dy, dx, **kwargs):
   param.F = kwargs.get('F', np.block([[eye, eye], [zer, eye]]))
   param.H = kwargs.get('H', np.block([[eye, zer]]))
   param.lambda_track_length = kwargs.get('lambda_track_length', None)
+  param.moveNames = ['split', 'merge']
+  param.moveProbs = np.array([0.5, 0.5])
+
   # todo: sampler scheduling stuff?
   
   # set priors
   ## x_{1k} ~ N(mu0, Sigma0)
   prior.mu0 = kwargs.get('mu0', np.zeros(dx))
   prior.Sigma0 = kwargs.get('Sigma0', np.block([[1e6*eye, zer], [zer, eye]]))
-  prior.H_mu0 = np.dot(param.H, prior.mu0)
-  prior.H_Sigma0_H = np.dot(param.H, np.dot(prior.Sigma0, param.H.T))
-  prior.H_Sigma0_H_inv = np.linalg.inv(prior.H_Sigma0_H)
-  if np.any(np.linalg.eigvals(prior.H_Sigma0_H_inv)):
-    prior.H_Sigma0_H_inv += 1e-6 * eye
-
 
   ## Q_k ~ IW(df0, S0)
   prior.df0 = kwargs.get('df0', 10)
@@ -106,19 +106,70 @@ def init2d(ifile):
   # Shared initial parameters for all tracks
   Q = o.prior.S0 / (o.prior.df0 - dx - 1)
   R = 0.1 * Q[:dy,:dy]
-  mu0 = o.prior.mu0
-  param = dict(Q=Q, R=R, mu0=mu0)
+  param = dict(Q=Q, R=R, mu0=o.prior.mu0)
   
   okf = jpt.kalman.opts(dy, dx, F=o.param.F, H=o.param.H, Q=Q, R=R)
 
-  np.seterr(all='raise')
   x = {}
   for k in z.ks:
     xtks = jpt.kalman.ffbs(okf,
       dict([(t, None) for t in z.to(k).keys()]), # requested latent
       dict([(t, y[t][j]) for t, j in z.to(k).items()]), # available obs
-      x0=(mu0, o.prior.Sigma0)) 
+      x0=(o.prior.mu0, o.prior.Sigma0)) 
     x[int(k)] = ( param, xtks )
   w = jpt.AnyTracks(x)
 
   return o, y, w, z
+
+def log_joint(o, y, w, z):
+  ll = 0.0
+
+  # track likelihoods
+  for k in w.ks:
+    theta, x_tks = w.x[k]
+    y_tks = dict([(t, y[t][z.to(k)[t]]) for t in x_tks.keys()])
+    okf = jpt.kalman.opts(o.param.dy, o.param.dx, Q=theta['Q'], R=theta['R'],
+      F=o.param.F, H=o.param.H)
+    x0=(o.prior.mu0, o.prior.Sigma0)
+    ll += jpt.kalman.joint_ll(okf, x_tks, y_tks, x0)
+  
+  # track association lengths
+  if o.param.lambda_track_length is not None:
+    for k in w.ks:
+      theta, x_tks = w.x()[k]
+      nAssoc = len(x_tks)
+      ll += poisson.logpmf(nAssoc, o.param.lambda_track_length)
+
+  return ll
+
+# how to handle proposals with different arguments?
+#   force all to have same inputs
+#   lambda fcn to pass through relevant inputs
+#   sample-specific logic for each move                 <---
+def sample(o, y, w, z, ll):
+  info = dict(valid=False, accept=False, move=None, logA=None, logq=None,
+    ll_prop=None, ll_old=None)
+
+  # sample move
+  info['move'] = np.random.choice(o.param.moveNames, p=o.param.moveProbs)
+
+  doAcceptTest = True
+  if info['move'] == 'split':
+    w_, z_, valid, logq = jpt.PointTracker.proposals.split(w, z)
+  elif info['move'] == 'merge':
+    w_, z_, valid, logq = jpt.PointTracker.proposals.merge(w, z)
+  else:
+    raise NotImplementedError(f"Don't support {move} proposal")
+
+  if not valid: return w, z, info
+  else: info['valid'] = True
+
+  # Acceptance test and record info
+  ll_new = log_joint(o, y, w_, z_)
+  logA = ll_new - ll
+  info.update(logA=logA, ll_prop=ll_new, ll_old=ll, logq=logq)
+  if not doAcceptTest or logA > 0 or np.random.rand() <= np.exp(logA):
+    info['accept'] = True
+    return w_, z_, info
+  else:
+    return w, z, info

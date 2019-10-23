@@ -4,31 +4,64 @@ import warnings, du
 import IPython as ip
 np.set_printoptions(precision=2, suppress=True)
 
-def testPointInit():
+def testSampling():
   ifile = 'data/datasets/k22/dets.csv'
-  # ifile = 'data/datasets/k22/gt.csv'
   tracker = jpt.PointTracker
   o, y, w, z = tracker.init2d(ifile)
+  ll = tracker.log_joint(o, y, w, z)
 
+  nSamples = 100
+  accept = 0
+  lls = np.zeros(nSamples)
+  lls[0] = ll
+  
+  for nS in range(1,nSamples):
+    w, z, info = tracker.sample(o, y, w, z, lls[nS-1])
+    if info['accept'] == True: lls[nS] = info['ll_prop']; accept += 1
+    else: lls[nS] = lls[nS-1]
+
+  print(f'Accepted {accept} proposals, final LL is {lls[-1]:.2f}, initial LL was {lls[0]:.2f}')
   jpt.viz.plot_points2d_global(y)
   jpt.viz.plot_tracks2d_global(w)
   plt.show()
+
+def testPointInit():
+  # ifile = 'data/datasets/k22/gt.csv'
+  ifile = 'data/datasets/k22/dets.csv'
+  tracker = jpt.PointTracker
+  o, y, w, z = tracker.init2d(ifile)
+
+  ll = tracker.log_joint(o, y, w, z)
+
+  # o.param.moveNames = ['split']
+  # o.param.moveProbs = np.array([1.0,])
+
+  plt.figure()
+  jpt.viz.plot_points2d_global(y)
+  jpt.viz.plot_tracks2d_global(w)
+
+  w_, z_, info = tracker.sample(o, y, w, z, ll)
+  print(info['accept'])
+  print(info['ll_prop'])
+
+  # w_, z_, ll_, move, accepted = tracker.sample(o, y, w, z, ll)
+  # w_, z_, accepted, ll_ = tracker.sample(o, y, w, z, ll)
+
+  # print(accepted)
+  # print(ll_)
+
+  plt.figure()
+  jpt.viz.plot_points2d_global(y)
+  jpt.viz.plot_tracks2d_global(w_)
+
   ip.embed()
 
 
-  # tracker.init2d_data_dependent(ifile)
 
 
-
-  # Q = np.diag((.1, .1, 5, 5))
-  # R = .1 * np.eye(2)
-  # tracker = jpt.PointTracker
-  # opts = tracker.opts(ifile, Q=Q, R=R)
-  # y, w, z = tracker.init(opts)
-  # jpt.viz.plot_tracks2d_global(w)
   # jpt.viz.plot_points2d_global(y)
+  # jpt.viz.plot_tracks2d_global(w)
   # plt.show()
-  #
   # ip.embed()
 
 def testHMM():

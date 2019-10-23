@@ -3,6 +3,7 @@ from numpy.linalg import multi_dot as mdot
 import scipy.stats, argparse, du
 import scipy.linalg as sla
 from scipy.stats import multivariate_normal as mvn
+from scipy.spatial.distance import mahalanobis
 import IPython as ip
 
 def opts(dy, dx, **kwargs):
@@ -235,7 +236,7 @@ def ffbs(o, x, y, x0=None):
     d = tDelta
     H = np.linalg.matrix_power(o.F, d)
     Q_ = o.Q
-    for t_ in range(1, tDelta): Q_ = o.F.dot(Q_).dot(o.F.T) + o.kf.Q 
+    for t_ in range(1, tDelta): Q_ = o.F.dot(Q_).dot(o.F.T) + o.Q 
 
     # "Observation" is xs[idx+1] with mean F x_t, covariance Q (if no time gap)
     #                                 else integrate out x_{t+1, .., x_{t+d-1}
@@ -270,6 +271,34 @@ def predictive(o, x, t):
   muY, SigmaY = StateToObs(o, muX, SigmaX)
   return muX, SigmaX, muY, SigmaY
 
+def joint_ll(o, x, y, x0):
+  # x: dictionary of {t: vals} for all times with desired inference
+  # y: dictionary of {t: vals} for all times with at least one observation
+  # x0: (mu, Sigma) tuple signifying prior dist; very broad if not specified
+  assert len(x) == len(y)
+  Ri = np.linalg.inv(o.R)
+
+  ll = 0.0 
+
+  xPrev, PPrev = x0
+  tPrev = min(x.keys()) - 1
+  for idx, t in enumerate(x.keys()):
+
+    # power up by # intervening times
+    tDelta = t-tPrev
+    if tDelta > 1:
+      xh, Ph = (xPrev.copy(), PPrev.copy())
+      for t_ in range(tDelta-1): xh, Ph = predict(o, xh, Ph)
+    else:
+      xh, Ph = (np.dot(o.F, xPrev), o.Q)
+
+    # x_t, y_t
+    ll += -0.5 * mahalanobis(x[t], xh, np.linalg.inv(Ph))
+    ll += -0.5 * mahalanobis(y[t], np.dot(o.H, x[t]), Ri)
+
+    xPrev, PPrev, tPrev = ( x[t], np.zeros((o.dx, o.dx)), t )
+
+  return ll
 
 def inferNormalNormal(y, SigmaY, muX, SigmaX, H=None, b=None):
   r''' Conduct a conjugate Normal-Normal update on the below system:

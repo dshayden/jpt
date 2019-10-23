@@ -1,7 +1,9 @@
 import jpt
 from abc import ABC, abstractmethod
+import warnings
 from warnings import warn
 import copy
+import IPython as ip
 
 class Association(ABC):
   """ Stores an association event of targets to observations.
@@ -61,7 +63,7 @@ class UniqueBijectiveAssociation(Association, jpt.Serializable):
     Edit e is either a dictionary (for kind = 'tkj' or 'tjk')
     or a list (for kind = 't').
 
-    Edit kind is one of 'tkj', 'tjk', or 't'.
+    Edit kind is one of 'tkj', 'tjk', or 't'. (only tkj supported for now)
 
     Inplace 
     
@@ -94,6 +96,7 @@ class UniqueBijectiveAssociation(Association, jpt.Serializable):
     for t in self._z.keys():
       if len(self._z[t]) != len(np.unique(self._z[t])):
         warn(f'Non-unique values in self._z[{t}]: \n{self._z[t]}')
+        ip.embed()
         return False
 
       for j in range(self.N[t]):
