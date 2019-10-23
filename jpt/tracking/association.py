@@ -6,7 +6,7 @@ import copy
 class Association(ABC):
   """ Stores an association event of targets to observations.
   
-  This is the glue between a given Hypothesis and ObservationSet (either of
+  This is the glue between a given Tracks and ObservationSet (either of
   which may be resampled over time).
   """
 
@@ -120,7 +120,7 @@ class UniqueBijectiveAssociation(Association, jpt.Serializable):
     }
 
   def fromSerializable(N, _z):
-    # return PointHypothesis loaded from args pulled from serialized data
+    # return UniqueBijectiveAssociation loaded from args pulled from serialized data
     return UniqueBijectiveAssociation(N, _z)
 
   def __getitem__(self, t):

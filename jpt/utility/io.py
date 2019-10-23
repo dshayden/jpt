@@ -48,7 +48,7 @@ def mot15_point2d_to_assoc_unique(fname):
   z = jpt.UniqueBijectiveAssociation(y.N, z)
   return y, z
 
-def point_hypothesis_to_mot15_point2d(fname, w):
+def point_tracks_to_mot15_point2d(fname, w):
   fid = open(fname, 'w')
   for t in w.ts:
     for k, xtk in w[t].items():
@@ -73,7 +73,7 @@ __fromBytesObjects = {
   'ImageObservationSet': jpt.ImageObservationSet,
   'MaskObservationSet': jpt.MaskObservationSet,
   'UniqueBijectiveAssociation': jpt.UniqueBijectiveAssociation,
-  'PointHypothesis': jpt.PointHypothesis
+  'AnyTracks': jpt.AnyTracks
 }
 
 def save(fname, D):

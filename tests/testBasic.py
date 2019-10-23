@@ -2,19 +2,29 @@ from context import jpt
 import numpy as np, matplotlib.pyplot as plt
 import warnings, du
 import IPython as ip
+np.set_printoptions(precision=2, suppress=True)
 
 def testPointInit():
   ifile = 'data/datasets/k22/gt.csv'
-  Q = np.diag((.1, .1, 5, 5))
-  R = .1 * np.eye(2)
   tracker = jpt.PointTracker
-  opts = tracker.opts(ifile, Q=Q, R=R)
-  y, w, z = tracker.init(opts)
-  jpt.viz.plot_tracks2d_global(w)
-  jpt.viz.plot_points2d_global(y)
-  plt.show()
-
+  o, y, z = tracker.init2d(ifile)
   ip.embed()
+
+
+  # tracker.init2d_data_dependent(ifile)
+
+
+
+  # Q = np.diag((.1, .1, 5, 5))
+  # R = .1 * np.eye(2)
+  # tracker = jpt.PointTracker
+  # opts = tracker.opts(ifile, Q=Q, R=R)
+  # y, w, z = tracker.init(opts)
+  # jpt.viz.plot_tracks2d_global(w)
+  # jpt.viz.plot_points2d_global(y)
+  # plt.show()
+  #
+  # ip.embed()
 
 def testHMM():
   fname = 'data/datasets/k22/gt.csv'
@@ -68,15 +78,14 @@ def testMask():
 def testViz():
   fname = 'data/datasets/k22/gt.csv'
   y, z = jpt.io.mot15_point2d_to_assoc_unique(fname)
-  ip.embed()
   jpt.viz.plot_points2d_global(y)
 
   x = { }
   for k in z.ks:
     for t, j in z.to(k).items():
-      if k not in x: x[int(k)] = {}
-      x[int(k)][t] = y[t][j]
-  w = jpt.PointHypothesis(x)
+      if k not in x: x[int(k)] = ( {}, {} )
+      x[int(k)][1][t] = y[t][j]
+  w = jpt.AnyTracks(x)
 
   jpt.viz.plot_tracks2d_global(w)
 
@@ -97,10 +106,10 @@ def testIO():
   x = { }
   for k in z2.ks:
     for t, j in z2.to(k).items():
-      if k not in x: x[int(k)] = {}
-      x[int(k)][t] = y2[t][j]
+      if k not in x: x[int(k)] = ( {}, {} )
+      x[int(k)][1][t] = y2[t][j]
  
-  w = jpt.PointHypothesis(x)
+  w = jpt.AnyTracks(x)
   # jpt.io.point_hypothesis_to_mot15_point2d('test.csv', w)
 
   # test save
@@ -126,9 +135,9 @@ def testMisc():
   data = {1: [[2.,3.], [4.,5.]], 2: [6., 7.]}
   y = jpt.NdObservationSet(data)
   z = jpt.UniqueBijectiveAssociation(y.N, {1: [2,3], 2: [3,]})
-  x = jpt.PointHypothesis({
-    2: { 1: np.array([2.25, 2.75]) },
-    3: { 1: np.array([4.25, 5.25]), 2: np.array([6.25, 7.25]) }
+  x = jpt.AnyTracks({
+    2: ({}, { 1: np.array([2.25, 2.75])} ),
+    3: ({}, { 1: np.array([4.25, 5.25]), 2: np.array([6.25, 7.25])} )
   })
 
   okf = jpt.kalman.opts(2, 4, Q=10*np.eye(4), R=0.1*np.eye(2) )
