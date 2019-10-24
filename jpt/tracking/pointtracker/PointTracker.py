@@ -39,8 +39,8 @@ def opts(ifile, dy, dx, **kwargs):
   param.F = kwargs.get('F', np.block([[eye, eye], [zer, eye]]))
   param.H = kwargs.get('H', np.block([[eye, zer]]))
   param.lambda_track_length = kwargs.get('lambda_track_length', None)
-  param.moveNames = ['split', 'merge']
-  param.moveProbs = np.array([0.5, 0.5])
+  param.moveNames = ['split', 'merge', 'switch']
+  param.moveProbs = np.array([0.33, 0.33, 1.0 - 0.66])
 
   # todo: sampler scheduling stuff?
   
@@ -136,7 +136,7 @@ def log_joint(o, y, w, z):
   # track association lengths
   if o.param.lambda_track_length is not None:
     for k in w.ks:
-      theta, x_tks = w.x()[k]
+      theta, x_tks = w.x[k]
       nAssoc = len(x_tks)
       ll += poisson.logpmf(nAssoc, o.param.lambda_track_length)
 
@@ -155,9 +155,11 @@ def sample(o, y, w, z, ll):
 
   doAcceptTest = True
   if info['move'] == 'split':
-    w_, z_, valid, logq = jpt.PointTracker.proposals.split(w, z)
+    w_, z_, valid, logq = jpt.PointTracker.proposals.split(o, y, w, z)
   elif info['move'] == 'merge':
-    w_, z_, valid, logq = jpt.PointTracker.proposals.merge(w, z)
+    w_, z_, valid, logq = jpt.PointTracker.proposals.merge(o, y, w, z)
+  elif info['move'] == 'switch':
+    w_, z_, valid, logq = jpt.PointTracker.proposals.switch(o, y, w, z)
   else:
     raise NotImplementedError(f"Don't support {move} proposal")
 

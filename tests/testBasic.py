@@ -4,11 +4,15 @@ import warnings, du
 import IPython as ip
 np.set_printoptions(precision=2, suppress=True)
 
-def testSampling():
-  ifile = 'data/datasets/k22/dets.csv'
+def testSwitch():
+  ifile = 'data/datasets/k22/gt.csv'
   tracker = jpt.PointTracker
   o, y, w, z = tracker.init2d(ifile)
   ll = tracker.log_joint(o, y, w, z)
+
+  # draw switch sample
+  o.param.moveNames = ['switch']
+  o.param.moveProbs = np.array([1.0,])
 
   nSamples = 100
   accept = 0
@@ -18,6 +22,40 @@ def testSampling():
   for nS in range(1,nSamples):
     w, z, info = tracker.sample(o, y, w, z, lls[nS-1])
     if info['accept'] == True: lls[nS] = info['ll_prop']; accept += 1
+    else: lls[nS] = lls[nS-1]
+    
+  print(f'Accepted {accept} proposals, final LL is {lls[-1]:.2f}, initial LL was {lls[0]:.2f}')
+
+  # jpt.viz.plot_points2d_global(y)
+  # jpt.viz.plot_tracks2d_global(w)
+  # plt.show()
+
+
+
+  w_, z_, info = tracker.sample(o, y, w, z, ll)
+  print(info)
+
+
+
+def testSampling():
+  # ifile = 'data/datasets/k22/dets.csv'
+  ifile = 'data/datasets/k22/gt.csv'
+  tracker = jpt.PointTracker
+  o, y, w, z = tracker.init2d(ifile)
+  o.param.lambda_track_length = len(y.ts)
+  ll = tracker.log_joint(o, y, w, z)
+
+  nSamples = 2000
+  accept = 0
+  lls = np.zeros(nSamples)
+  lls[0] = ll
+  
+  for nS in range(1,nSamples):
+    w, z, info = tracker.sample(o, y, w, z, lls[nS-1])
+    if info['accept'] == True:
+      lls[nS] = info['ll_prop']
+      accept += 1
+      print(nS, info['move'], lls[nS])
     else: lls[nS] = lls[nS-1]
 
   print(f'Accepted {accept} proposals, final LL is {lls[-1]:.2f}, initial LL was {lls[0]:.2f}')
@@ -54,7 +92,7 @@ def testPointInit():
   jpt.viz.plot_points2d_global(y)
   jpt.viz.plot_tracks2d_global(w_)
 
-  ip.embed()
+  # ip.embed()
 
 
 

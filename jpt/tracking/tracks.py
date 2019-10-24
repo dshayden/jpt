@@ -57,7 +57,9 @@ class AnyTracks(Tracks, jpt.Serializable):
           theta, x_tks = w.x[k] # old
           for t, x_tk_ in x_tks_.items():
             assert type(t) == int
-            if x_tk_ is None: del x_tks[t]
+            if x_tk_ is None:
+              if t in x_tks: del x_tks[t]
+              # del x_tks[t]
             else: x_tks[t] = x_tk_
           theta = theta_
         else:

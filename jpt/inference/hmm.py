@@ -1,13 +1,15 @@
 import itertools
 import numpy as np
 from scipy.special import logsumexp
+import du.stats
 import IPython as ip
 
-def build(t0, ts, ks, val, costxx, costxy):
+def build(t0, x0, ts, ks, val, costxx, costxy):
   """ Construct swap hmm for K targets.
 
   INPUT
     t0 (len-K list): start times for each target
+    x0 (len-K list): start states for each target
     ts (len-T list): times inside swap window
     ks (len-K list): target indices
     val (fcn): of the form xt, yt, jt = val(t,k)
@@ -37,8 +39,8 @@ def build(t0, ts, ks, val, costxx, costxy):
         for k in range(K): # compute over each k (pPrime[k], p[k])
           xtPrime, _, _ = vs[idx][pPrime[k]]
           xt, yt, _ = vs[idx+1][p[k]]
-          Psi[idx, cPrime, c] += costxx(tPrime, xtPrime, t, xt, k)
-          Psi[idx, cPrime, c] += costxy(t, k, xt, yt)
+          Psi[idx, cPrime, c] += costxx(tPrime, xtPrime, t, xt, ks[k])
+          Psi[idx, cPrime, c] += costxy(t, ks[k], xt, yt)
 
   # build unnormalized log prior
   pi = np.zeros(nPerms)
@@ -47,13 +49,52 @@ def build(t0, ts, ks, val, costxx, costxy):
   for c, p in enumerate(perms):
     for k in range(K): # compute over each k (pPrime[k], p[k])
       tPrime = t0[k]
-      xtPrime, _, _ = vs[idx][k]
+      xtPrime = x0[k]
       xt, yt, _ = vs[idx+1][p[k]]
-      pi[c] += costxx(tPrime, xtPrime, t, xt, k)
-      pi[c] += costxy(t, k, xt, yt)
+      pi[c] += costxx(tPrime, xtPrime, t, xt, ks[k])
+      pi[c] += costxy(t, ks[k], xt, yt)
 
   # normalize and return
   Psi = np.exp(Psi - logsumexp(Psi, axis=2, keepdims=True))
   pi = np.exp(pi - logsumexp(pi))
   psi = [ None for t in ts ]
   return perms, pi, Psi, psi
+
+def ffbs(pi, Psi, psi):
+  T, K = (Psi.shape[0]+1, Psi.shape[1])
+  a = np.zeros((T, K)) # filter messages
+
+  # filter messages
+  if psi[0] is None: a[0] = pi
+  else: a[0] = pi * psi[0]
+  a[0] /= np.sum(a[0])
+
+  for t in range(1,T):
+    psi_t = psi[t] if psi[t] is not None else np.ones(K)
+    a[t] = psi_t * np.dot(Psi[t-1].T, a[t-1])
+    a[t] /= np.sum(a[t])
+
+  # backward sampling
+  x = -1 * np.ones(T, dtype=np.int)
+
+  b = np.zeros((T, K))
+  b[-1] = a[-1]
+
+  x[-1] = du.stats.catrnd(b[-1][np.newaxis])
+  for t in reversed(range(T-1)):
+    j = x[t+1]
+
+    psi_t = psi[t] if psi[t] is not None else np.ones(K)
+    # pmf[i] is psi_t[i] * Psi[t,i,j] * a[t,i]
+    #           ------------------------------
+    #                      a[t,j]
+    for i in range(K):
+      if np.isclose(a[t+1,j], 0.0):
+        b[t,i] = 0.0
+        continue
+      b[t,i] = psi_t[i] * Psi[t,i,j] * a[t,i] / a[t+1,j]
+    b[t] /= np.sum(b[t])
+
+    x[t] = du.stats.catrnd(b[t][np.newaxis])
+
+  return [ int(x_) for x_ in x ]
