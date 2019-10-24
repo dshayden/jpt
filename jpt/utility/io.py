@@ -1,6 +1,8 @@
 import jpt
 from abc import ABC, abstractmethod
 import numpy as np, pandas as pd
+import cv2
+from pycocotools import mask as pcMask
 import du
 
 __mot2015 = ['Frame', 'ID', 'BBx', 'BBy', 'BBw', 'BBh', 'Score', 'x', 'y', 'z']
@@ -57,6 +59,7 @@ def point_tracks_to_mot15_point2d(fname, w):
   fid.close()
 
 def masks_to_obs(fname, startTime=0):
+  """ Load pycocotools masks to MaskObservationSet. """
   masks = du.load(fname)
   yMasks = dict([ (t+startTime, masks[t]) for t in range(len(masks))])
   return jpt.MaskObservationSet(yMasks)
@@ -67,6 +70,33 @@ def imgs_to_obs(imgDir, startTime=0):
   T, N_t = ( len(imgPaths), 1 )
   yDict = { t + startTime: [ imgPaths[t], ] for t in range(T) }
   return jpt.ImageObservationSet(yDict)
+
+def eroded_mean_from_masks(yMasks):
+  """ Construct NdObservationSet from MaskObservationSet using Eroded Mean """  
+
+  def eroded_mean(mask):
+    means, k = ( [], 5 )
+    for i in range(10):
+      m = cv2.erode(mask, np.ones((k, k), dtype=np.uint8))
+      y, x = np.nonzero(m)
+      if len(y) == 0: break
+      pts = np.stack((x, y)).T
+      means.append(np.mean(pts, axis=0))
+      k *= 2
+    return means[-1]
+
+  def means_t(t):
+    masks, _ = yMasks[t]
+    means = np.zeros((yMasks.N[t], 2))
+    for j in range(yMasks.N[t]):
+      mask = masks[j]
+      means[j] = eroded_mean(mask)
+    return (t, means)
+
+  means = du.For(means_t, yMasks.ts, showProgress=True)
+  yMeans = jpt.NdObservationSet(dict(means))
+  return yMeans
+
 
 __fromBytesObjects = {
   'NdObservationSet': jpt.NdObservationSet,

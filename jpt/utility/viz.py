@@ -1,17 +1,34 @@
 import numpy as np, matplotlib.pyplot as plt
 import itertools
 import du
+import skimage.draw as draw
 
-def plot_masks(y):
+def plot_associated_masks_on_images(yImgs, yMasks, z, outDir):
+  colors = du.diffcolors(len(z.ks), alpha=0.5)
+
+  for idx, t in enumerate(yImgs.ts):
+    im = yImgs[t][0]
+    mt, st = yMasks[t]
+    for j in range(z.N[t]):
+      mtj = mt[j]
+      color = colors[ z[t][j] ]
+      im = du.DrawOnImage(im, np.where(mtj > 0), color)
+    du.imwrite(im, f'{outDir}/img-{idx:08d}.jpg')
+
+def plot_masks(y, yMeans=None):
   """ Plot MaskObservationSets """
   colors = du.diffcolors(max(y.N.keys()), alpha=0.5)
-  # import IPython as ip; ip.embed()
   def show(t):
     mt, st = y[t]
     if y.N[t] == 0: return
     im = np.zeros(mt.shape[1:] + (3,), dtype=np.uint8)
     for mtk, cind in zip(mt, range(y.N[t])):
       im = du.DrawOnImage(im, np.where(mtk > 0), colors[cind])
+    if yMeans is not None:
+      for mean_tk, cind in zip(yMeans[t], range(yMeans.N[t])):
+        coords = draw.circle(mean_tk[1], mean_tk[0], 40, shape=im.shape)
+        im = du.DrawOnImage(im, coords, colors[cind])
+
     plt.title(t)
     plt.xticks([])
     plt.yticks([])

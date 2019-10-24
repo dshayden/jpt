@@ -2,7 +2,92 @@ from context import jpt
 import numpy as np, matplotlib.pyplot as plt
 import warnings, du
 import IPython as ip
+import copy
 np.set_printoptions(precision=2, suppress=True)
+
+def testTrackingWithErodedMean():
+  ipath = 'data/datasets/marmoset'
+  ifile = f'{ipath}/recording-2018-11-21_10_16_16-00000000_masks_and_means'
+  outDir = f'{ipath}/trackOutput'
+  
+  tracker = jpt.PointTracker
+  tracker.init2d_masks(ifile)
+  o, yMasks, y, w, z = tracker.init2d_masks(ifile)
+
+  imgDir = f'{ipath}/rgb'
+  yImgs = jpt.io.imgs_to_obs(imgDir)
+
+  o.param.lambda_track_length = len(y.ts)
+  ll = tracker.log_joint(o, y, w, z)
+
+  nSamples = 100
+  accept = 0
+  lls = np.zeros(nSamples)
+  lls[0] = ll
+  zs = [ z ]
+  ws = [ w ]
+
+  for nS in range(1,nSamples):
+    w, z, info = tracker.sample(o, y, w, z, lls[nS-1])
+    if info['accept'] == True:
+      lls[nS] = info['ll_prop']
+      accept += 1
+      print(nS, info['move'], lls[nS])
+    else:
+      lls[nS] = lls[nS-1]
+    zs.append(copy.deepcopy(z))
+    ws.append(copy.deepcopy(w))
+
+
+  print(f'Accepted {accept} proposals, final LL is {lls[-1]:.2f}, initial LL was {lls[0]:.2f}')
+
+  # # look at association spread  
+  # zsBurn = zs[nSamples//4:]
+  # colors = du.diffcolors(3)
+  # nTargets = 2
+  # nObs = max(y.N.values())
+  #
+  # cnts = np.zeros((len(y.ts), nObs, nTargets))
+  # for idx, t in enumerate(y.ts):
+  #   for z in zsBurn:
+  #     for k in [0, 1]:
+  #       if t in z.to(k):
+  #         j = z.to(k)[t]
+  #         cnts[idx, j, k] += 1
+  #
+  # for idx, t in enumerate(y.ts):
+  #   for n in range(nObs):
+  #     # get cnts for "observation" j
+  #     s = cnts[idx, n]
+  #     if np.sum(s) == 0: continue
+  #     s = s / np.sum(s)
+  #     ctr = np.array([t, n])
+  #     plt.pie(s, colors=colors, center=ctr, radius=0.25)
+  # plt.xticks([]); plt.xlabel('time')
+  # plt.yticks([]);
+  # plt.xlim(-1, len(y.ts)+1)
+  # plt.scatter([0, len(y.ts)], [0, 2], s=0.01)
+  # plt.gca().set_aspect('auto')
+  #
+  # plt.savefig('test.pdf', bbox_inches='tight')
+  # plt.show()
+  #
+  #
+  # # jpt.viz.plot_associated_masks_on_images(yImgs, yMasks, z, outDir)
+
+  ip.embed()
+
+
+def testErodedMean():
+  ipath = 'data/datasets/marmoset'
+  ifile = f'{ipath}/recording-2018-11-21_10_16_16-00000000.gz'
+
+  yMasks = jpt.io.masks_to_obs(ifile)
+  yMeans = jpt.io.eroded_mean_from_masks(yMasks)
+
+  ofile = f'{ipath}/recording-2018-11-21_10_16_16-00000000_masks_and_means'
+  jpt.io.save(ofile, {'yMasks': yMasks, 'yMeans': yMeans})
+
 
 def testSwitch():
   ifile = 'data/datasets/k22/gt.csv'

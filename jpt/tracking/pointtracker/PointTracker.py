@@ -39,8 +39,8 @@ def opts(ifile, dy, dx, **kwargs):
   param.F = kwargs.get('F', np.block([[eye, eye], [zer, eye]]))
   param.H = kwargs.get('H', np.block([[eye, zer]]))
   param.lambda_track_length = kwargs.get('lambda_track_length', None)
-  param.moveNames = ['split', 'merge', 'switch']
-  param.moveProbs = np.array([0.33, 0.33, 1.0 - 0.66])
+  param.moveNames = ['update', 'split', 'merge', 'switch']
+  param.moveProbs = np.array([0.25, 0.25, 0.25, 0.25])
 
   # todo: sampler scheduling stuff?
   
@@ -88,9 +88,11 @@ def data_dependent_priors(y):
   #    inform df0, S0
   dists = [ ]
   for t1, t2 in list(map(list, zip(y.ts, y.ts[1:]))):
-    nbrs = NearestNeighbors(n_neighbors=1).fit(y[t1])
-    _, indices = nbrs.kneighbors(y[t2])
-    for n in range(y.N[t1]): dists.append(np.abs(y[t1][n] - y[t2][indices[n]]))
+    if y.N[t1] == 0 or y.N[t2] == 0: continue
+    nbrs = NearestNeighbors(n_neighbors=1).fit(y[t2])
+    _, indices = nbrs.kneighbors(y[t1])
+    for n in range(y.N[t1]):
+      dists.append(np.abs(y[t1][n] - y[t2][indices[n]]))
   scatter = du.scatter_matrix( np.concatenate((dists)), center=False )
 
   S0 = sla.block_diag(.1*scatter, scatter)
@@ -120,6 +122,79 @@ def init2d(ifile):
   w = jpt.AnyTracks(x)
 
   return o, y, w, z
+
+def init2d_masks(ifile):
+  dy, dx = (2, 4)
+  data = jpt.io.load(ifile)
+  yMasks, yMeans = ( data['yMasks'], data['yMeans'] )
+
+  o = opts(ifile, dy, dx)
+  okf = jpt.kalman.opts(dy, dx, F=o.param.F, H=o.param.H)
+  param = dict(Q=okf.Q, R=okf.R, mu0=o.prior.mu0)
+  w, z = init_assoc_greedy_dumb(yMeans, param)
+
+  return o, yMasks, yMeans, w, z
+
+def init_assoc_greedy_dumb(y, param):
+  nTracks = max(y.N.values())
+
+  # x is { k: {t: xtk, ...}, ... }
+  # z is { t: (n_t,), ... }
+  #   where (n_t,) is filled with indexes into k
+  x, z = ( {}, {} )
+
+  nInit = 0
+  for t in y.ts:
+    ns = np.arange(y.N[t]) # these are the actual indices j
+    np.random.shuffle(ns) # these are the shuffled indices
+    ns = list(ns)
+    zt = np.zeros( len(ns), dtype=np.int )
+    for idx, n in enumerate(ns):
+      n = int(n)
+      xtn = np.concatenate((y[t][n], np.zeros(len(y[t][n]))))
+      if idx >= nInit: # initialize new track
+        x[idx] = ( param, {t: xtn } )
+        nInit += 1
+      else:
+        x[idx][1][t] = xtn
+      zt[n] = int(idx)
+    z[t] = list(zt)
+  
+  w = jpt.AnyTracks(x)
+  z = jpt.UniqueBijectiveAssociation(y.N, z)
+
+  return w, z
+
+
+# def init_assoc_greedy_dumb(y):
+#   nTracks = max(y.N.values())
+#   
+#   Tracks = [ ]
+#   
+#   z = { }
+#   nInit = 0
+#   for t in y.ts:
+#     ns = np.arange(y.N[t]) # these are the actual indices j
+#     np.random.shuffle(ns) # these are the shuffled indices
+#     ns = list(ns)
+#     zt = np.zeros( len(ns), dtype=np.int )
+#     for idx, n in enumerate(ns):
+#       n = int(n)
+#       if idx >= nInit: # initialize new track
+#         tau = Track({t: n})
+#         nInit += 1
+#         Tracks.append(tau)
+#       else:
+#         Tracks[idx][t] = n
+#       zt[n] = int(idx)
+#     z[t] = list(zt)
+#
+#   w = Hypothesis(y)
+#   w.Tracks = Tracks
+#   w.z = z
+#   assert w.is_valid()
+#   return w
+
 
 def log_joint(o, y, w, z):
   ll = 0.0
@@ -153,8 +228,12 @@ def sample(o, y, w, z, ll):
   # sample move
   info['move'] = np.random.choice(o.param.moveNames, p=o.param.moveProbs)
 
-  doAcceptTest = True
-  if info['move'] == 'split':
+  if info['move'] in ['switch', 'update']: doAcceptTest = False
+  else: doAcceptTest = True
+
+  if info['move'] == 'update':
+    w_, z_, valid, logq = jpt.PointTracker.proposals.update(o, y, w, z)
+  elif info['move'] == 'split':
     w_, z_, valid, logq = jpt.PointTracker.proposals.split(o, y, w, z)
   elif info['move'] == 'merge':
     w_, z_, valid, logq = jpt.PointTracker.proposals.merge(o, y, w, z)

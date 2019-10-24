@@ -3,6 +3,31 @@ from scipy.spatial.distance import mahalanobis
 import numpy as np
 import IPython as ip
 
+def update(o, y, w, z):
+  # resample latent parameters, w
+  ## 1: resample x_tk for all t, k
+  editDict_k = {}
+  for k in w.ks:
+    # build x, y dictionary for kalman.ffbs
+    zk = z.to(k)
+    ts_k = zk.keys()
+    xk = dict([(t, None) for t in ts_k])
+    yk = dict([(t, y[t][zk[t]]) for t in ts_k])
+    x0 = ( o.prior.mu0, o.prior.Sigma0 )
+    theta = w.x[k][0]
+    okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H,
+      Q=theta['Q'], R=theta['R'])
+    
+    x_ = jpt.kalman.ffbs(okf, xk, yk, x0)
+    editDict_k[k] = ( theta, x_ )
+
+  ## 2: todo: resample Q, R (do later)
+  
+  ## 3: edit w
+  w_ = w.edit(editDict_k, kind='k', inplace=False)
+
+  return w_, z, True, 0.0
+
 def switch(o, y, w, z):
   windows = possible_switch_windows(o, z, reverse=False)
   if len(windows) == 0: return w, z, False, 0.0
