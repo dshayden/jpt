@@ -52,7 +52,6 @@ class AnyTracks(Tracks, jpt.Serializable):
         if v is None: del w.x[k]; continue
 
         theta_, x_tks_ = v # new
-
         if k in w.x:
           theta, x_tks = w.x[k] # old
           for t, x_tk_ in x_tks_.items():

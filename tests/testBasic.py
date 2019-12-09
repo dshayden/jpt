@@ -5,27 +5,51 @@ import IPython as ip
 import copy
 np.set_printoptions(precision=2, suppress=True)
 
+def testGather():
+  ifile = 'data/datasets/k22/dets.csv'
+  tracker = jpt.PointTracker
+  o, y, w, z = tracker.init2d(ifile)
+  ll = tracker.log_joint(o, y, w, z)
+
+  # draw switch sample
+  o.param.moveNames = ['gather']
+  o.param.moveProbs = np.array([1.0,])
+
+  w, z, info = tracker.sample(o, y, w, z, ll)
+
+
 def testTrackingWithErodedMean():
   ipath = 'data/datasets/marmoset'
-  ifile = f'{ipath}/recording-2018-11-21_10_16_16-00000000_masks_and_means'
-  outDir = f'{ipath}/trackOutput'
+  # ifile = f'{ipath}/recording-2018-11-21_10_16_16-00000000_masks_and_means'
+  ifile = f'{ipath}/recording-2018-11-21_10_16_16-allMasksAndMeans.gz'
+
+  # outDir = f'{ipath}/trackOutput'
+  outDir = f'{ipath}/trackOutputAll_01'
   
   tracker = jpt.PointTracker
   tracker.init2d_masks(ifile)
   o, yMasks, y, w, z = tracker.init2d_masks(ifile)
 
-  imgDir = f'{ipath}/rgb'
-  yImgs = jpt.io.imgs_to_obs(imgDir)
+  # imgDir = f'{ipath}/rgb'
+  # yImgs = jpt.io.imgs_to_obs(imgDir)
 
   o.param.lambda_track_length = len(y.ts)
   ll = tracker.log_joint(o, y, w, z)
 
-  nSamples = 100
+  o.param.moveNames = ['update', 'split', 'merge', 'switch']
+  o.param.moveProbs = np.array([0.2, 0.1, 0.1, 0.6])
+
+
+  nSamples = 10000
   accept = 0
   lls = np.zeros(nSamples)
   lls[0] = ll
   zs = [ z ]
   ws = [ w ]
+
+  # savePath = 'data/datasets/marmoset/samples'
+  # savePath = 'data/datasets/marmoset/samples2'
+  savePath = 'data/datasets/marmoset/samplesAll_01'
 
   for nS in range(1,nSamples):
     w, z, info = tracker.sample(o, y, w, z, lls[nS-1])
@@ -38,8 +62,35 @@ def testTrackingWithErodedMean():
     zs.append(copy.deepcopy(z))
     ws.append(copy.deepcopy(w))
 
+    # jpt.io.save(f'{savePath}/sample-{nS:05}', {'z': z, 'w': w, 'yMasks': yMasks,
+    #   'y': y, 'yImgs': yImgs, 'o': o, 'll': lls[nS]})
+    jpt.io.save(f'{savePath}/sample-{nS:05}', {'z': z, 'w': w, 'y': y, 'o': o,
+      'll': lls[nS]})
+
 
   print(f'Accepted {accept} proposals, final LL is {lls[-1]:.2f}, initial LL was {lls[0]:.2f}')
+  # ip.embed()
+
+  # DSH added
+  # z, w = ( zs[-1], ws[-1] )
+  # cols = du.diffcolors(len(z.ks))
+  # def show(t):
+  #   plt.imshow(yImgs[t][0])
+  #   for k in w[t].keys():
+  #     wtk = w[t][k]
+  #     plt.scatter(*wtk[:2], color=cols[k])
+  # du.ViewPlots(z.ts, show)
+  # plt.show()
+
+  # save z, w in usable format
+  # savePath = 'data/datasets/marmoset/samples'
+  # for nS in range(nSamples):
+  #   z, w = ( zs[nS], ws[nS] )
+  #   jpt.io.save(f'{savePath}/sample-{nS:05}', {'z': z, 'w': w})
+
+  # jpt.io.save(ofile, {'yMasks': yMasks, 'yMeans': yMeans})
+  
+
 
   # # look at association spread  
   # zsBurn = zs[nSamples//4:]
@@ -75,7 +126,6 @@ def testTrackingWithErodedMean():
   #
   # # jpt.viz.plot_associated_masks_on_images(yImgs, yMasks, z, outDir)
 
-  ip.embed()
 
 
 def testErodedMean():
@@ -90,26 +140,48 @@ def testErodedMean():
 
 
 def testSwitch():
-  ifile = 'data/datasets/k22/gt.csv'
+  # ifile = 'data/datasets/k22/gt.csv'
+  ifile = 'data/datasets/k22/dets.csv'
   tracker = jpt.PointTracker
   o, y, w, z = tracker.init2d(ifile)
+
+  okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H)
+  param = dict(Q=okf.Q, R=okf.R, mu0=o.prior.mu0)
+  w, z = tracker.init_assoc_greedy_dumb(y, param)
+
+
   ll = tracker.log_joint(o, y, w, z)
 
   # draw switch sample
-  o.param.moveNames = ['switch']
-  o.param.moveProbs = np.array([1.0,])
+  o.param.moveNames = ['update', 'switch']
+  o.param.moveProbs = np.array([0.5, 0.5])
 
-  nSamples = 100
+  nSamples = 1000
   accept = 0
   lls = np.zeros(nSamples)
   lls[0] = ll
+
+  savePath = 'data/datasets/k22/samples001'
   
   for nS in range(1,nSamples):
     w, z, info = tracker.sample(o, y, w, z, lls[nS-1])
-    if info['accept'] == True: lls[nS] = info['ll_prop']; accept += 1
-    else: lls[nS] = lls[nS-1]
+
+
+    if info['accept'] == True:
+      lls[nS] = info['ll_prop']
+      accept += 1
+      print(nS, info['move'], lls[nS])
+    else:
+      lls[nS] = lls[nS-1]
+
+    # if info['accept'] == True: lls[nS] = info['ll_prop']; accept += 1
+    # else: lls[nS] = lls[nS-1]
+
+    jpt.io.save(f'{savePath}/sample-{nS:05}', {'z': z, 'w': w,
+      'y': y, 'o': o, 'll': lls[nS]})
     
   print(f'Accepted {accept} proposals, final LL is {lls[-1]:.2f}, initial LL was {lls[0]:.2f}')
+
 
   # jpt.viz.plot_points2d_global(y)
   # jpt.viz.plot_tracks2d_global(w)
@@ -123,14 +195,15 @@ def testSwitch():
 
 
 def testSampling():
-  # ifile = 'data/datasets/k22/dets.csv'
-  ifile = 'data/datasets/k22/gt.csv'
+  ifile = 'data/datasets/k22/dets.csv'
+  # ifile = 'data/datasets/k22/gt.csv'
   tracker = jpt.PointTracker
   o, y, w, z = tracker.init2d(ifile)
-  o.param.lambda_track_length = len(y.ts)
+  # o.param.lambda_track_length = len(y.ts)
+  o.param.lambda_track_length = 300.0
   ll = tracker.log_joint(o, y, w, z)
 
-  nSamples = 2000
+  nSamples = 500
   accept = 0
   lls = np.zeros(nSamples)
   lls[0] = ll
@@ -140,12 +213,20 @@ def testSampling():
     if info['accept'] == True:
       lls[nS] = info['ll_prop']
       accept += 1
-      print(nS, info['move'], lls[nS])
-    else: lls[nS] = lls[nS-1]
+      print(f"Sample {nS:05}, Move: {info['move']}, ll: {lls[nS]:06.2f}, K: {len(z.ks):03}")
+
+      # print(nS, info['move'], lls[nS])
+    else:
+      # if info['move'] == 'gather':
+      #   ip.embed()
+      lls[nS] = lls[nS-1]
 
   print(f'Accepted {accept} proposals, final LL is {lls[-1]:.2f}, initial LL was {lls[0]:.2f}')
   jpt.viz.plot_points2d_global(y)
   jpt.viz.plot_tracks2d_global(w)
+  
+  plt.figure()
+  plt.plot(lls)
   plt.show()
 
 def testPointInit():

@@ -40,7 +40,8 @@ def opts(dy, dx, **kwargs):
   o.H = kwargs.get('H', np.concatenate((eye, zer), axis=1))
 
   # system noise
-  o.Q = kwargs.get('Q', sla.block_diag(2*eye, 10*eye))
+  # o.Q = kwargs.get('Q', sla.block_diag(2*eye, 10*eye))
+  o.Q = kwargs.get('Q', sla.block_diag(0.5*eye, 1*eye))
 
   # Qd = kwargs.get('Qd', 20*np.eye(dy))
   # o.Q = kwargs.get('Q', np.concatenate((
@@ -48,7 +49,8 @@ def opts(dy, dx, **kwargs):
   #   np.concatenate((zer,  Qd), axis=1))))
 
   # observation noise
-  o.R = kwargs.get('R', 20*np.eye(dy))
+  # o.R = kwargs.get('R', 20*np.eye(dy))
+  o.R = kwargs.get('R', 0.1*np.eye(dy))
 
   return o
 
@@ -194,7 +196,7 @@ def state_estimate(o, x, **kwargs):
     xsDict[t] = ( xs[i], Ps[i] )
   return xsDict
 
-def ffbs(o, x, y, x0=None):
+def ffbs(o, x, y, x0=None, return_ll=False):
   # x: dictionary of {t: None} for all times with desired inference
   # y: dictionary of {t: vals} for all times with at least one observation
   # x0: (mu, Sigma) tuple signifying prior dist; very broad if not specified
@@ -223,8 +225,12 @@ def ffbs(o, x, y, x0=None):
       xf[idx], Pf[idx], _ = filter(o, xf[idx], Pf[idx], ytj)
     xPrev, PPrev, tPrev = ( xf[idx], Pf[idx], t )
 
+  ll = 0.0
+
   xs = np.zeros((nObs, o.dx))
   xs[-1] = mvn.rvs(xf[-1], Pf[-1])
+  ll += mvn.logpdf(xs[-1], xf[-1], Pf[-1])
+
   tNext = obs[-1][0]
   for idx in reversed(range(nObs-1)):
     t, j = obs[idx]
@@ -245,9 +251,36 @@ def ffbs(o, x, y, x0=None):
     #           inferNormalNormal(y,     SigmaY, muX,     SigmaX,  H=None, b=None)
     mu, Sigma = inferNormalNormal(xs[idx+1], Q_, xf[idx], Pf[idx], H=H)
     xs[idx] = mvn.rvs(mu, Sigma)
+    ll += mvn.logpdf(xs[idx], mu, Sigma)
     tNext = t
   for idx, (t, _) in enumerate(obs): x[int(t)] = xs[idx]
-  return x
+
+  if return_ll:
+    # handle denominators p(x_{t+1} | y_{1:t})
+    llDenom = 0.0
+    for idx, (t, yt) in enumerate(obs[:-1]):
+      tNext = obs[idx+1][0]
+      tDelta = tNext - t
+
+      xh, Ph = ( xf[idx].copy(), Pf[idx].copy() )
+      for t_ in range(tDelta): xh, Ph = predict(o, xh, Ph)
+
+      # np.set_printoptions(suppress=True, precision=2)
+      # print(t, '\n', xs[idx+1], '\n', xh, '\n', np.diag(Ph), '\n\n')
+      # print(f'{t}')
+      # print('xh:', xh)
+      # print('Ph (diag):', np.diag(Ph))
+      # print('xs[idx+1]:', xs[idx+1])
+      # print(llDenom)
+      # ip.embed()
+
+      llDenom += mvn.logpdf( xs[idx+1], xh, Ph ) # x_{t+1} == xs[idx+1]
+
+    print(f'll: {ll - llDenom:.2f}, llNum: {ll:.2f}, llDen: {llDenom:.2f}')
+    ll -= llDenom
+
+  if not return_ll: return x
+  else: return x, ll
 
 def predictive(o, x, t):
   # get predictive distribution of x, y at time t

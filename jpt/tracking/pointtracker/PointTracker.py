@@ -39,8 +39,8 @@ def opts(ifile, dy, dx, **kwargs):
   param.F = kwargs.get('F', np.block([[eye, eye], [zer, eye]]))
   param.H = kwargs.get('H', np.block([[eye, zer]]))
   param.lambda_track_length = kwargs.get('lambda_track_length', None)
-  param.moveNames = ['update', 'split', 'merge', 'switch']
-  param.moveProbs = np.array([0.25, 0.25, 0.25, 0.25])
+  param.moveNames = ['update', 'split', 'merge', 'switch', 'gather']
+  param.moveProbs = np.array([0.2, 0.1, 0.1, 0.5, 0.1])
 
   # todo: sampler scheduling stuff?
   
@@ -229,6 +229,7 @@ def sample(o, y, w, z, ll):
   info['move'] = np.random.choice(o.param.moveNames, p=o.param.moveProbs)
 
   if info['move'] in ['switch', 'update']: doAcceptTest = False
+  # if info['move'] in ['update',]: doAcceptTest = False
   else: doAcceptTest = True
 
   if info['move'] == 'update':
@@ -239,6 +240,8 @@ def sample(o, y, w, z, ll):
     w_, z_, valid, logq = jpt.PointTracker.proposals.merge(o, y, w, z)
   elif info['move'] == 'switch':
     w_, z_, valid, logq = jpt.PointTracker.proposals.switch(o, y, w, z)
+  elif info['move'] == 'gather':
+    w_, z_, valid, logq = jpt.PointTracker.proposals.gather(o, y, w, z)
   else:
     raise NotImplementedError(f"Don't support {move} proposal")
 

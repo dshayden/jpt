@@ -35,6 +35,21 @@ class NdObservationSet(ObservationSet, jpt.Serializable):
   def fromSerializable(_y):
     return NdObservationSet(_y)
 
+  def i2tj(self, i): 
+    """ Get observation time t, index j of linear index i. """
+    cs = np.cumsum(list(self.N.values()))
+    idx = min(np.where(i < cs)[0]) # index into cs 
+    t = self.ts[idx]
+    j = j = i if idx==0 else i - cs[idx-1]
+    return t, j
+
+  def tj2i(self, t, j):
+    """ Get linear index of observation (t,j). """
+    idx = np.where(np.array(self.ts) == t)[0]
+    cs = np.cumsum(list(self.N.values()))
+    i = j if idx == 0 else cs[idx-1] + j
+    return i
+
 from pycocotools import mask as pcMask
 class MaskObservationSet(ObservationSet, jpt.Serializable):
   """ Collections of masks at each time t. """

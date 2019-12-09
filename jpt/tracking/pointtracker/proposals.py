@@ -1,7 +1,80 @@
 import jpt
-from scipy.spatial.distance import mahalanobis
+from scipy.spatial.distance import mahalanobis, cdist
+from scipy.special import logsumexp
+from scipy.stats import poisson
 import numpy as np
 import IPython as ip
+
+def gather(o, y, w, z):
+  # Randomly sample observation
+  nObs = np.sum(list(y.N.values()))
+  i = np.random.choice(range(nObs))
+  q_new_given_old = -np.log(nObs)
+  t0, j0 = y.i2tj(i)
+  assert y.tj2i(t0,j0) == i
+  
+  ts, js = ( [t0,], [j0,] )
+  maxT = max(y.ts)
+  while True:
+    # Randomly sample stop probability
+    stopProb = 0.05 # todo: make parameter
+    stop = np.random.rand() < stopProb
+    if stop: 
+      q_new_given_old += np.log(stopProb)
+      break
+    q_new_given_old += np.log(1 - stopProb)
+
+    # Randomly sample step d
+    gatherPoissonLambda = 0.2 # todo: put in param
+    d = 1 + poisson.rvs(gatherPoissonLambda)
+    q_new_given_old += poisson.logpmf(d-1, gatherPoissonLambda)
+    if ts[-1] + d > maxT: break
+
+    # Compute pairwise distances of previous observation to all in next   
+    #   todo: account for all past associations in computing distance
+    yPrev = y[ts[-1]][js[-1]][np.newaxis]
+    yNext = y[ts[-1]+d]
+    dists = -0.5 * cdist(yPrev, yNext)[0]
+    probs = np.exp(dists - logsumexp(dists))
+
+    j = np.random.choice(np.arange(len(probs)), p=probs)
+    q_new_given_old += dists[j]
+
+    js.append(j)
+    ts.append( ts[-1]+d )
+
+  # construct new hypothesis
+  kNew = z.next_k()
+  editDict_tkj = { (t, kNew): j for t, j in zip(ts, js) }
+  z_ = z.edit(editDict_tkj, kind='tkj', inplace=False)
+
+  editDict_k = {}
+  
+  # remove old tracks and latent states stored to tracks which lost associations
+  removedK = np.setdiff1d(z.ks, z_.ks) 
+  for k in removedK: editDict_k[k] = None
+  for t, j in zip(ts, js):
+    kOld = z[t][j]
+    if kOld in removedK: continue
+    if kOld not in editDict_k: editDict_k[kOld] = (None, {})
+    editDict_k[kOld][1][t] = None
+
+  # add new track; set theta parameters and infer latent state sequence
+  okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H)
+  theta = dict(Q=okf.Q, R=okf.R, mu0=o.prior.mu0)
+  xkNew, ykNew = ( {}, {} )
+  for t, j in zip(ts, js):
+    xkNew[t] = None
+    ykNew[t] = y[t][j]
+  xkNew = jpt.kalman.ffbs(okf, xkNew, ykNew, x0=(o.prior.mu0, o.prior.Sigma0))
+  editDict_k[int(kNew)] = ( theta, xkNew )
+  w_ = w.edit(editDict_k, kind='k', inplace=False)
+  
+  q_old_given_new = -np.log( len(w_.ks) )
+  # todo: handle assignment probs in q_old_given_new (based on # tracks that can
+  # accept observation (t,j).
+
+  return w_, z_, True, q_old_given_new - q_new_given_old
 
 def update(o, y, w, z):
   # resample latent parameters, w
@@ -65,6 +138,12 @@ def switch(o, y, w, z):
   # make hmm, sample
   perms, pi, Psi, psi = jpt.hmm.build(t0, x0, ts, ks, val, costxx, costxy)
   S = jpt.hmm.ffbs(pi, Psi, psi)
+
+  if len(w.ks) <= 4:
+    None
+    ## dsh: re-enable
+    # print('inside switch')
+    # ip.embed()
 
   # edit w, z
   ## S indexes into perms; perms is wrt ks

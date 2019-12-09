@@ -26,7 +26,7 @@ setup(
     license='MIT',
     description='Joint Posterior Multi-Object Tracker',
     packages=["jpt"],
-    # scripts=['scripts/switch_visualize'],
+    scripts=['scripts/jpt_runPointTracker'],
     install_requires=install_reqs,
     dependency_links=[
     ],

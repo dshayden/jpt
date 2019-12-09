@@ -1,0 +1,40 @@
+#!/usr/bin/env python
+
+import argparse, du
+import IPython as ip
+import numpy as np
+import json
+import jpt
+
+def main(args):
+  tracker = jpt.PointTracker
+  tracker.init2d_masks(args.ifile)
+  o, yMasks, y, w, z = tracker.init2d_masks(args.ifile)
+
+  o.param.lambda_track_length = len(y.ts)
+  ll = tracker.log_joint(o, y, w, z)
+
+  o.param.moveNames = ['update', 'split', 'merge', 'switch']
+  o.param.moveProbs = np.array([0.2, 0.1, 0.1, 0.6])
+
+  accept = 0
+  for nS in range(1,args.nSamples):
+    w, z, info = tracker.sample(o, y, w, z, ll)
+    if info['accept'] == True:
+      ll = info['ll_prop']
+      accept += 1
+      print(nS, info['move'], ll)
+
+    jpt.io.save(f'{args.outdir}/sample-{nS:05}',
+      {'z': z, 'w': w, 'y': y, 'o': o, 'll': ll})
+
+if __name__ == "__main__":
+  parser = argparse.ArgumentParser(description='')
+  parser.add_argument('ifile', type=str, help='dictionary with yMasks, yMeans')
+  parser.add_argument('outdir', type=str, help='output directory for samples')
+  parser.add_argument('nSamples', type=int, help='number of samples to draw')
+  parser.set_defaults(func=main)
+
+  args = parser.parse_args()
+  args.func(args)
+
