@@ -31,8 +31,10 @@ class UniqueBijectiveAssociation(Association, jpt.Serializable):
   """ Association event with constraints.
   
   Constraints:
-    All observations must have an associated target.
-    All targets must have no more than one association at each time.
+    All observations must have an associated target (or noise).
+    All targets must have no more than one association at each time
+    Targets are represented by k = 1, 2, ...
+    Noise represented by k = 0
   """
   def __init__(self, N, zs):
     """ dict N {t: n_t }, assignments dictionary zs { t: (n_t,) }. """
@@ -84,34 +86,44 @@ class UniqueBijectiveAssociation(Association, jpt.Serializable):
     return z
 
   def __build_lut(self):
-    # build lookup table of k -> {ts}_k
+    # build lookup tables of
+    #   target associations _K: {k : { t : j }}
+    #   noise associations _K0: {t : [j1, j2, ...]}
     self._K = { }
+    self._K0 = { }
     for t in self._z.keys():
       for j in range(self.N[t]):
         k = self._z[t][j]
-        if k not in self._K: self._K[k] = { t: j }
+        if k == 0:
+          if t not in self._K0: self._K0[t] = [j,]
+          else: self._K0[t].append(j)
+        elif k not in self._K: self._K[k] = { t: j }
         else: self._K[k][t] = j
 
   def __check_consistency(self):
     for t in self._z.keys():
-      if len(self._z[t]) != len(np.unique(self._z[t])):
-        warn(f'Non-unique values in self._z[{t}]: \n{self._z[t]}')
+      ztPos = self._z[t][ self._z[t] != 0 ]
+      # if len(self._z[t]) != len(np.unique(self._z[t])):
+      if len(ztPos) != len(np.unique(ztPos)):
+        warn(f'Non-unique, non-0 values in self._z[{t}]: \n{self._z[t]}')
         ip.embed()
         return False
 
       for j in range(self.N[t]):
         k = self._z[t][j]
-        if k not in self._K:
+        if k != 0 and k not in self._K:
           warn(f'z_{t} {j} = {k}, but {k} not in self._K')
           return False
-
-        if t not in self._K[k]:
+        elif k != 0 and t not in self._K[k]:
           warn(f'z_{t} {j} = {k}, but {t} not in self._K[k]')
           return False
-
-        if self._K[k][t] != j:
+        elif k != 0 and self._K[k][t] != j:
           warn(f'z_{t},{j} = {k}, but self._K[k][t] = {self._K[k][t]}')
           return False
+        elif k == 0:
+          if t not in self._K0 or j not in self._K0[t]:
+            warn(f'z_{t} {j} = {k}, but {k} not in self._K0')
+            return False
 
     return True
 
@@ -136,8 +148,10 @@ class UniqueBijectiveAssociation(Association, jpt.Serializable):
 
   def to(self, k):
     """ Get all associations to option k as {t: j} for j an index into y[t] """
-    return self._K[k]
+    if k == 0: return self._K0
+    else: return self._K[k]
   
   def next_k(self):
     """ Return next valid index of a new unique label. """
-    return max(self.ks) + 1
+    if len(self.ks) == 0: return int(1)
+    else: return max(self.ks) + 1

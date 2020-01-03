@@ -41,11 +41,17 @@ class AnyTracks(Tracks, jpt.Serializable):
       assert isinstance(kTuple[0], dict) and isinstance(kTuple[1], dict)
       for t, v in kTuple[1].items(): assert type(t) == int
       ts += [ t for t in kTuple[1].keys() ]
-    self.ts = sorted(np.unique(ts))
-    self.ks = sorted(self.x.keys())
-    self.t0, self.tE = ( min(self.ts), max(self.ts) )
+    if len(ts) > 0:
+      self.ts = sorted(np.unique(ts))
+      self.ks = sorted(self.x.keys())
+      self.t0, self.tE = ( min(self.ts), max(self.ts) )
+    else:
+      self.ks = []
+      self.t0, self.tE = (-1, -1)
 
   def edit(self, e, kind='k', inplace=False):
+    # import IPython as ip
+    # ip.embed()
     w = self if inplace else copy.deepcopy(self)
     if kind == 'k':
       for k, v in e.items():

@@ -38,7 +38,38 @@ def opts(ifile, dy, dx, **kwargs):
   param.ifile = ifile
   param.F = kwargs.get('F', np.block([[eye, eye], [zer, eye]]))
   param.H = kwargs.get('H', np.block([[eye, zer]]))
+
+  # fixed-K additions
+  param.fixedK = kwargs.get('fixedK', -1) # -1 means no target limit
+  param.maxK = kwargs.get('maxK', -1) # -1 means no target limit
+
+  # parameters directly impacting noise assignments and # of tracks
+
+  # |omega_k| ~ Pois(lambda_track_length) for all k > 0
+  #   |omega_k|: length of target k's track
+  #   lambda_track_length: expected track length
   param.lambda_track_length = kwargs.get('lambda_track_length', None)
+
+  # d_t ~ Bin(n_t, p_d) for
+  #   d_t: # detections at time t
+  #   n_t: # observations at time t
+  param.pd = kwargs.get('pd', 0.8) # probability of target detection
+
+  # z_t ~ Bin(e_t, p_z) for
+  #   z_t: # targets terminated at time t
+  #   p_z: probability of target disappearance
+  param.pz = kwargs.get('pz', 0.1)
+
+  # f_t ~ Pois(lambda_f V) for
+  #   f_t: # false alarms (i.e. # of noise associations) at time t
+  #   lambda_f: false-alarm rate per unit time unit volume
+  param.lambda_f = kwargs.get('lambda_f', 0.1) 
+
+  # a_t ~ Pois(lambda_b V) for
+  #   a_t: # new targets at time t
+  #   lambda_b: new target birth rate per unit time unit volume
+  param.lambda_b = kwargs.get('lambda_b', 0.01) 
+
   param.moveNames = ['update', 'split', 'merge', 'switch', 'gather']
   param.moveProbs = np.array([0.2, 0.1, 0.1, 0.5, 0.1])
 
@@ -100,6 +131,7 @@ def data_dependent_priors(y):
   return dict(mu0=mu0, Sigma0=Sigma0, df0=df0, S0=S0)
 
 def init2d(ifile):
+  # expects ifile to be in mot15 format
   dy, dx = (2, 4)
   y, z = jpt.io.mot15_point2d_to_assoc_unique(ifile)
   kwargs = data_dependent_priors(y)
@@ -123,19 +155,46 @@ def init2d(ifile):
 
   return o, y, w, z
 
-def init2d_masks(ifile):
+def init2d_masks(ifile, **kwargs):
+  # input is list of mask-based detections, will slowly compute mean statistics
+  # will take ~4 mins for ~3k masks
+  dy, dx = (2, 4)
+  yMasks = jpt.io.masks_to_obs(ifile)
+  yMeans = jpt.io.mean_from_masks(yMasks)
+
+  o = opts(ifile, dy, dx, **kwargs)
+  okf = jpt.kalman.opts(dy, dx, F=o.param.F, H=o.param.H)
+  param = dict(Q=okf.Q, R=okf.R, mu0=o.prior.mu0)
+  w, z = init_assoc_greedy_dumb(yMeans, param, maxK=o.param.maxK)
+
+  return o, yMasks, yMeans, w, z
+
+def init2d_masks_precomputed_mean(ifile, **kwargs):
+  # expects JPT-serialized dictionary with keys yMasks, yMeans
   dy, dx = (2, 4)
   data = jpt.io.load(ifile)
   yMasks, yMeans = ( data['yMasks'], data['yMeans'] )
 
-  o = opts(ifile, dy, dx)
+  o = opts(ifile, dy, dx, **kwargs)
   okf = jpt.kalman.opts(dy, dx, F=o.param.F, H=o.param.H)
   param = dict(Q=okf.Q, R=okf.R, mu0=o.prior.mu0)
-  w, z = init_assoc_greedy_dumb(yMeans, param)
+  w, z = init_assoc_greedy_dumb(yMeans, param, maxK=o.param.maxK)
 
   return o, yMasks, yMeans, w, z
 
-def init_assoc_greedy_dumb(y, param):
+def init_assoc_noise(y):
+  x, z = ( {}, {} )
+  for t in y.ts:
+    ns = np.arange(y.N[t])
+    z[t] = list(np.zeros(len(ns), dtype=np.int))
+
+  w = jpt.AnyTracks(x)
+  z = jpt.UniqueBijectiveAssociation(y.N, z)
+
+  return w, z
+
+
+def init_assoc_greedy_dumb(y, param, maxK=-1):
   nTracks = max(y.N.values())
 
   # x is { k: {t: xtk, ...}, ... }
@@ -143,57 +202,38 @@ def init_assoc_greedy_dumb(y, param):
   #   where (n_t,) is filled with indexes into k
   x, z = ( {}, {} )
 
-  nInit = 0
+  nInit = 1
   for t in y.ts:
     ns = np.arange(y.N[t]) # these are the actual indices j
     np.random.shuffle(ns) # these are the shuffled indices
     ns = list(ns)
     zt = np.zeros( len(ns), dtype=np.int )
     for idx, n in enumerate(ns):
+
+      # noise associations
+      if maxK != -1 and idx+1 > maxK:
+        zt[n] = 0
+        continue
+
+      # target associations
       n = int(n)
       xtn = np.concatenate((y[t][n], np.zeros(len(y[t][n]))))
-      if idx >= nInit: # initialize new track
-        x[idx] = ( param, {t: xtn } )
+
+      # idx : 0..n-1
+      # nInit : 1, 2, ...
+      # x, z dictionaries
+      if idx >= nInit-1: # initialize new track
+        x[idx+1] = ( param, {t: xtn } )
         nInit += 1
       else:
-        x[idx][1][t] = xtn
-      zt[n] = int(idx)
+        x[idx+1][1][t] = xtn
+      zt[n] = int(idx+1)
     z[t] = list(zt)
   
   w = jpt.AnyTracks(x)
   z = jpt.UniqueBijectiveAssociation(y.N, z)
 
   return w, z
-
-
-# def init_assoc_greedy_dumb(y):
-#   nTracks = max(y.N.values())
-#   
-#   Tracks = [ ]
-#   
-#   z = { }
-#   nInit = 0
-#   for t in y.ts:
-#     ns = np.arange(y.N[t]) # these are the actual indices j
-#     np.random.shuffle(ns) # these are the shuffled indices
-#     ns = list(ns)
-#     zt = np.zeros( len(ns), dtype=np.int )
-#     for idx, n in enumerate(ns):
-#       n = int(n)
-#       if idx >= nInit: # initialize new track
-#         tau = Track({t: n})
-#         nInit += 1
-#         Tracks.append(tau)
-#       else:
-#         Tracks[idx][t] = n
-#       zt[n] = int(idx)
-#     z[t] = list(zt)
-#
-#   w = Hypothesis(y)
-#   w.Tracks = Tracks
-#   w.z = z
-#   assert w.is_valid()
-#   return w
 
 
 def log_joint(o, y, w, z):
@@ -207,13 +247,74 @@ def log_joint(o, y, w, z):
       F=o.param.F, H=o.param.H)
     x0=(o.prior.mu0, o.prior.Sigma0)
     ll += jpt.kalman.joint_ll(okf, x_tks, y_tks, x0)
+
   
-  # track association lengths
-  if o.param.lambda_track_length is not None:
-    for k in w.ks:
-      theta, x_tks = w.x[k]
-      nAssoc = len(x_tks)
-      ll += poisson.logpmf(nAssoc, o.param.lambda_track_length)
+  n_t = y.N #observations
+  d_t = { t: 0 for t in y.ts } #detections
+  f_t = { t: 0 for t in y.ts } #false alarms
+
+  for t in y.ts:
+    d_t[t] = np.sum(z[t] > 0)
+    f_t[t] = np.sum(z[t] == 0)
+
+  z_t = { t: 0 for t in y.ts } #track terminations
+  for k in w.ks: z_t[ max(w.x[k][1].keys()) ] += 1
+
+  e_t1 = { t: 0 for t in y.ts } #existing targets
+  a_t = { t: 0 for t in y.ts } #new targets
+  for k in z.ks:
+    minTime = min(z.to(k).keys())
+    maxTime = max(z.to(k).keys())
+
+    # new targets at time t
+    a_t[minTime] += 1
+
+    # targets at time t
+    for t in range(minTime, maxTime+1): e_t1[t] += 1
+
+  logPz = np.log(o.param.pz)
+  log1Pz = np.log(1 - o.param.pz)
+  logPd = np.log(o.param.pd)
+  log1Pd = np.log(1 - o.param.pd)
+  logLambda_b = np.log(o.param.lambda_b)
+  logLambda_f = np.log(o.param.lambda_f)
+  for t in y.ts:
+    if t-1 in e_t1: et = e_t1[t-1]
+    else: et = 0
+    ct = et - z_t[t]
+    ut = ct + a_t[t] - d_t[t]
+
+    ll += z_t[t] * logPz + ct * log1Pz
+    ll += d_t[t] * logPd + ut * log1Pd
+    ll += a_t[t] * logLambda_b
+    ll += f_t[t] * logLambda_f
+
+  # count false alarms, etc.
+  # x Bin(z_t | e_t, pz)
+  #   z_t : # terminated targets at time t
+  #   e_t : # targets at time t-1
+  #   pz  : probability of target disappearance
+
+  # x Bin(d_t | n_t, pd)
+  #   d_t : # detections at time t
+  #   n_t : # observations at time t
+  #   pd  : probability of target detection
+  
+  # x Pois(a_t | lambda_b)
+  #   a_t : # new targets at time t
+  #   lambda_b : new target birth rate per unit time unit volume
+
+  # x Pois(f_t | lambda_f)
+  #   f_t : # false alarms at time t
+  #   lambda_f : false-alarm rate per unit time unit volume 
+  
+
+  # # track association lengths
+  # if o.param.lambda_track_length is not None:
+  #   for k in w.ks:
+  #     theta, x_tks = w.x[k]
+  #     nAssoc = len(x_tks)
+  #     ll += poisson.logpmf(nAssoc, o.param.lambda_track_length)
 
   return ll
 

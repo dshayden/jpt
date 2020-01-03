@@ -5,13 +5,20 @@ import IPython as ip, sys
 
 # get last sample in each desired folder
 maskFolder = '/Users/dshayden/Downloads/behavior_dets/dets'
-sampleFolder = '/Users/dshayden/Downloads/behavior_dets/dets/tracks'
+# sampleFolder = '/Users/dshayden/Downloads/behavior_dets/dets/tracks'
+# sampleFolder = '/Users/dshayden/Research/code/jpt/tmp/k2_test'
+sampleFolder = '/Users/dshayden/Research/code/jpt/tmp/k2_test002'
 videoFolder = '/Users/dshayden/Downloads/behavior_dets/video'
-outDir = '/Users/dshayden/Downloads/behavior_dets/draw'
+# outDir = '/Users/dshayden/Downloads/behavior_dets/draw'
+# outDir = '/Users/dshayden/Research/code/jpt/tmp/k2_test_draw'
+outDir = '/Users/dshayden/Research/code/jpt/tmp/k2_test002_draw_b'
 
 folders = sorted([folder[0] for folder in os.walk(sampleFolder)])
 # this is 0:5 in files, but first file is '.' ; todo: set 0:5 as parameter
-folders = folders[1:6]
+# hard-coded
+# folders = folders[1:6]
+# folders = folders[1:3] # just get first two
+folders = folders[2:3] # just get first two
 sampleFiles = [ du.GetFilePaths(folder, 'gz')[-1] for folder in folders ]
 samples = [ jpt.io.load(sampleFile) for sampleFile in sampleFiles ]
 
@@ -79,13 +86,16 @@ videoImgs = [ jpt.io.imgs_to_obs(vid, 1500*i)
   for i, vid in enumerate(videoImgDirNames) ]
 
 # 0:5 is hard-coded here, corresponds to above folders index
-maskFiles = du.GetFilePaths(maskFolder, 'gz')[0:5]
+# maskFiles = du.GetFilePaths(maskFolder, 'gz')[0:5]
+# maskFiles = du.GetFilePaths(maskFolder, 'gz')[0:2]
+maskFiles = du.GetFilePaths(maskFolder, 'gz')[1:2]
 
 masks = [ jpt.io.masks_to_obs(mf, 1500*i)
   for i, mf in enumerate(maskFiles) ]
 
 # I have sampled associations, masks and images; draw them
-colors = du.diffcolors(len(np.unique(list(trackMaps.values()))), alpha=0.5)
+colors = du.diffcolors(1+len(np.unique(list(trackMaps.values()))), alpha=0.5)
+
 
 for nS in range(len(samples)):
   for idx, t in enumerate(videoImgs[nS].ts):
@@ -103,6 +113,3 @@ for nS in range(len(samples)):
       color = colors[ mappedK ]
       im = du.DrawOnImage(im, np.where(mtj > 0), color)
     du.imwrite(im, f'{outDir}/img-{t:08d}.jpg')
-
-ip.embed()
-sys.exit()

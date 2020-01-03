@@ -4,7 +4,8 @@ import du
 import skimage.draw as draw
 
 def plot_associated_masks_on_images(yImgs, yMasks, z, outDir):
-  colors = du.diffcolors(len(z.ks), alpha=0.5)
+  colors = du.diffcolors(len(z.ks)+1, alpha=0.5)
+  colors[0] = [0.5, 0.5, 0.5, 0.5]
 
   for idx, t in enumerate(yImgs.ts):
     im = yImgs[t][0]

@@ -19,8 +19,10 @@ def main(args):
   # get all unique target identifiers k
   # ks = np.unique( [ z_[s].ks for s in range(len(z_)) ] )
   ks = np.unique(np.concatenate(( [ z_[s].ks for s in range(len(z_)) ] )))
+
   nTargets = len(ks)
   colors = du.diffcolors(nTargets)
+
   nObs = max(y.N.values())
 
   cnts = np.zeros((len(y.ts), nObs, nTargets))
@@ -30,7 +32,7 @@ def main(args):
         if k not in z.ks: continue
         if t in z.to(k):
           j = z.to(k)[t]
-          cnts[idx, j, k] += 1
+          cnts[idx, j, k-1] += 1
 
   for idx, t in enumerate(y.ts):
     for n in range(nObs):

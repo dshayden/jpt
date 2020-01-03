@@ -202,7 +202,8 @@ def ffbs(o, x, y, x0=None, return_ll=False):
   # x0: (mu, Sigma) tuple signifying prior dist; very broad if not specified
   assert np.all(np.linalg.eigvals(o.Q) > 0), "ffbs non-ergodic for degenerate Q"
   ts = [ t for t in y ]
-  if x0 is None: x0 = ( np.zeros(o.dx), 1e9*np.eye(o.dx) )
+  # if x0 is None: x0 = ( np.zeros(o.dx), 1e9*np.eye(o.dx) )
+  if x0 is None: x0 = ( np.zeros(o.dx), sla.block_diag(1e9*np.eye(o.dy), 100*np.eye(o.dy)) )
   xPrev, PPrev = x0
 
   obs = [ (t, yt) for t, yt in y.items() ]

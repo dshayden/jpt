@@ -71,6 +71,25 @@ def imgs_to_obs(imgDir, startTime=0):
   yDict = { t + startTime: [ imgPaths[t], ] for t in range(T) }
   return jpt.ImageObservationSet(yDict)
 
+def mean_from_masks(yMasks):
+  """ Construct NdObservationSet from MaskObservationSet using Mean """
+
+  def mask_mean(mask):
+    ys, xs = np.nonzero(mask)
+    return np.array([ np.mean(xs), np.mean(ys) ])
+
+  def means_t(t):
+    masks, _ = yMasks[t]
+    means = np.zeros((yMasks.N[t], 2))
+    for j in range(yMasks.N[t]):
+      mask = masks[j]
+      means[j] = mask_mean(mask)
+    return (t, means)
+
+  means = du.For(means_t, yMasks.ts, showProgress=True)
+  yMeans = jpt.NdObservationSet(dict(means))
+  return yMeans
+
 def eroded_mean_from_masks(yMasks):
   """ Construct NdObservationSet from MaskObservationSet using Eroded Mean """  
 

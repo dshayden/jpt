@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from pycocotools import mask as pcMask
 import du
 import jpt
 
@@ -50,7 +51,6 @@ class NdObservationSet(ObservationSet, jpt.Serializable):
     i = j if idx == 0 else cs[idx-1] + j
     return i
 
-from pycocotools import mask as pcMask
 class MaskObservationSet(ObservationSet, jpt.Serializable):
   """ Collections of masks at each time t. """
 
@@ -75,7 +75,6 @@ class MaskObservationSet(ObservationSet, jpt.Serializable):
   def fromSerializable(_y):
     return MaskObservationSet(_y)
 
-from pycocotools import mask as pcMask
 class ImageObservationSet(ObservationSet, jpt.Serializable):
   """ Collections of images at each time t.
 

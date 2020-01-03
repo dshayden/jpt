@@ -5,11 +5,53 @@ import IPython as ip
 import copy
 np.set_printoptions(precision=2, suppress=True)
 
+def testNoise():
+  warnings.filterwarnings("error")
+
+  data = {1: [[2.,3.], [4.,5.]], 2: [6., 7.]}
+  y = jpt.NdObservationSet(data)
+  z = jpt.UniqueBijectiveAssociation(y.N, {1: [0,0], 2: [2,]})
+  x = jpt.AnyTracks({
+    2: ({}, { 2: np.array([6.5, 7.5])} ),
+  })
+
+  okf = jpt.kalman.opts(2, 4, Q=10*np.eye(4), R=0.5*np.eye(2) )
+  k = 2
+  yk = dict([ (t, y[t][j]) for t, j in z.to(k).items() ])
+  xk = jpt.kalman.ffbs(okf, {2: None}, yk)
+
+  muX, SX, muY, SY = jpt.kalman.predictive(okf, xk, 0)
+
+  tracker = jpt.PointTracker
+  dy, dx = (2, 4)
+  kwargs = tracker.data_dependent_priors(y)
+  dummy_ifile = ''
+  o = tracker.opts(dummy_ifile, dy, dx, **kwargs)
+
+  # Q = o.prior.S0 / (o.prior.df0 - dx - 1)
+  Q = np.diag(np.diag(o.prior.S0))
+ 
+  R = 0.1 * Q[:dy,:dy]
+  param = dict(Q=Q, R=R, mu0=o.prior.mu0)
+  w2, z2 = tracker.init_assoc_greedy_dumb(y, param, maxK=1)
+
+  ll = tracker.log_joint(o, y, w2, z2)
+
+  ip.embed()
+
+
 def testGather():
   ifile = 'data/datasets/k22/dets.csv'
   tracker = jpt.PointTracker
-  o, y, w, z = tracker.init2d(ifile)
+  dy, dx = (2, 4)
+  y = jpt.io.mot15_bbox_to_obs(ifile)
+  kwargs = tracker.data_dependent_priors(y)
+  o = tracker.opts(ifile, dy, dx, **kwargs)
+  w, z = tracker.init_assoc_noise(y)
   ll = tracker.log_joint(o, y, w, z)
+
+  # o, y, w, z = tracker.init2d(ifile)
+  # ll = tracker.log_joint(o, y, w, z)
 
   # draw switch sample
   o.param.moveNames = ['gather']
@@ -19,16 +61,16 @@ def testGather():
 
 
 def testTrackingWithErodedMean():
-  ipath = 'data/datasets/marmoset'
+  # ipath = 'data/datasets/marmoset'
   # ifile = f'{ipath}/recording-2018-11-21_10_16_16-00000000_masks_and_means'
-  ifile = f'{ipath}/recording-2018-11-21_10_16_16-allMasksAndMeans.gz'
+  # ifile = f'{ipath}/recording-2018-11-21_10_16_16-allMasksAndMeans.gz'
 
   # outDir = f'{ipath}/trackOutput'
   outDir = f'{ipath}/trackOutputAll_01'
   
   tracker = jpt.PointTracker
-  tracker.init2d_masks(ifile)
-  o, yMasks, y, w, z = tracker.init2d_masks(ifile)
+  # o, yMasks, y, w, z = tracker.init2d_masks(ifile, fixedK=2)
+  o, yMasks, y, w, z = tracker.init2d_masks_precomputed_mean(ifile, fixedK=2)
 
   # imgDir = f'{ipath}/rgb'
   # yImgs = jpt.io.imgs_to_obs(imgDir)
@@ -40,7 +82,7 @@ def testTrackingWithErodedMean():
   o.param.moveProbs = np.array([0.2, 0.1, 0.1, 0.6])
 
 
-  nSamples = 10000
+  nSamples = 100
   accept = 0
   lls = np.zeros(nSamples)
   lls[0] = ll
@@ -124,7 +166,7 @@ def testTrackingWithErodedMean():
   # plt.show()
   #
   #
-  # # jpt.viz.plot_associated_masks_on_images(yImgs, yMasks, z, outDir)
+  # jpt.viz.plot_associated_masks_on_images(yImgs, yMasks, z, outDir)
 
 
 
@@ -144,17 +186,19 @@ def testSwitch():
   ifile = 'data/datasets/k22/dets.csv'
   tracker = jpt.PointTracker
   o, y, w, z = tracker.init2d(ifile)
+  o.param.fixedK = 2
 
   okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H)
   param = dict(Q=okf.Q, R=okf.R, mu0=o.prior.mu0)
-  w, z = tracker.init_assoc_greedy_dumb(y, param)
+  # w, z = tracker.init_assoc_greedy_dumb(y, param, maxK=2)
+  w, z = tracker.init_assoc_noise(y, maxK=2)
 
 
   ll = tracker.log_joint(o, y, w, z)
 
   # draw switch sample
-  o.param.moveNames = ['update', 'switch']
-  o.param.moveProbs = np.array([0.5, 0.5])
+  # o.param.moveNames = ['update', 'switch']
+  # o.param.moveProbs = np.array([0.5, 0.5])
 
   nSamples = 1000
   accept = 0
@@ -179,6 +223,11 @@ def testSwitch():
 
     jpt.io.save(f'{savePath}/sample-{nS:05}', {'z': z, 'w': w,
       'y': y, 'o': o, 'll': lls[nS]})
+
+    if nS % 20 == 0:
+      jpt.viz.plot_points2d_global(y)
+      jpt.viz.plot_tracks2d_global(w)
+      plt.show()
     
   print(f'Accepted {accept} proposals, final LL is {lls[-1]:.2f}, initial LL was {lls[0]:.2f}')
 
@@ -189,8 +238,8 @@ def testSwitch():
 
 
 
-  w_, z_, info = tracker.sample(o, y, w, z, ll)
-  print(info)
+  # w_, z_, info = tracker.sample(o, y, w, z, ll)
+  # print(info)
 
 
 

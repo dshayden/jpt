@@ -5,17 +5,23 @@ import IPython as ip
 import numpy as np
 import json
 import jpt
+import os
 
 def main(args):
+  try: os.makedirs(args.outdir)
+  except: pass
+
   tracker = jpt.PointTracker
-  tracker.init2d_masks(args.ifile)
-  o, yMasks, y, w, z = tracker.init2d_masks(args.ifile)
+  
+  # o, yMasks, y, w, z = tracker.init2d_masks_precomputed_mean(args.ifile,
+  #   fixedK=True, maxK=2)
+  o, yMasks, y, w, z = tracker.init2d_masks(args.ifile, fixedK=True, maxK=2)
 
   o.param.lambda_track_length = len(y.ts)
   ll = tracker.log_joint(o, y, w, z)
 
   o.param.moveNames = ['update', 'split', 'merge', 'switch']
-  o.param.moveProbs = np.array([0.2, 0.1, 0.1, 0.6])
+  o.param.moveProbs = np.array([0.3, 0.05, 0.05, 0.6])
 
   accept = 0
   for nS in range(1,args.nSamples):
@@ -24,6 +30,8 @@ def main(args):
       ll = info['ll_prop']
       accept += 1
       print(nS, info['move'], ll)
+    else:
+      print(nS, 'x', info['move'])
 
     jpt.io.save(f'{args.outdir}/sample-{nS:05}',
       {'z': z, 'w': w, 'y': y, 'o': o, 'll': ll})
