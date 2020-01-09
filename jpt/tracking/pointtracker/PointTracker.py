@@ -193,6 +193,31 @@ def init_assoc_noise(y):
 
   return w, z
 
+# def init_assoc_random_fixedK(y, fixedK):
+#   x, z = ( {}, {} )
+#
+#   # randomly assign labels
+#   for t in y.ts:
+#     zt = np.zeros(y.N[t])
+#     curK = 1
+#     for n in range(y.N[t]):
+#       zt[n] = curK
+#       curK += 1
+#       if curK > fixedK: break
+#     np.random.shuffle(zt)
+#     z[t] = list(zt)
+#
+#     for n in range(y.N[t]):
+#       k = zt[n]
+#       if k == 0: continue
+#       xtn = np.concatenate((y[t][k], np.zeros(len(y[t][n]))))
+#
+#
+#   w = jpt.AnyTracks(x)
+#   z = jpt.UniqueBijectiveAssociation(y.N, z)
+#
+#   return w, z
+
 
 def init_assoc_greedy_dumb(y, param, maxK=-1):
   nTracks = max(y.N.values())

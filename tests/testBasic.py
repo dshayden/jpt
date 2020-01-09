@@ -190,15 +190,14 @@ def testSwitch():
 
   okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H)
   param = dict(Q=okf.Q, R=okf.R, mu0=o.prior.mu0)
-  # w, z = tracker.init_assoc_greedy_dumb(y, param, maxK=2)
-  w, z = tracker.init_assoc_noise(y, maxK=2)
-
+  w, z = tracker.init_assoc_greedy_dumb(y, param, maxK=2)
+  # w, z = tracker.init_assoc_noise(y, maxK=2)
 
   ll = tracker.log_joint(o, y, w, z)
 
   # draw switch sample
-  # o.param.moveNames = ['update', 'switch']
-  # o.param.moveProbs = np.array([0.5, 0.5])
+  o.param.moveNames = ['update', 'switch']
+  o.param.moveProbs = np.array([0.5, 0.5])
 
   nSamples = 1000
   accept = 0
@@ -206,6 +205,18 @@ def testSwitch():
   lls[0] = ll
 
   savePath = 'data/datasets/k22/samples001'
+
+  # save initial sample
+  nS = 0
+  jpt.io.save(f'{savePath}/sample-{nS:05}', {'z': z, 'w': w,
+    'y': y, 'o': o, 'll': lls[nS]})
+  print(nS, 'init', lls[nS])
+
+  jpt.viz.plot_points2d_global(y)
+  jpt.viz.plot_tracks2d_global(w)
+  plt.title(f'Initial Sample, Log Joint: {lls[nS]:.2f}')
+  plt.savefig(f'{savePath}/initial.pdf', bbox_inches='tight')
+  plt.close()
   
   for nS in range(1,nSamples):
     w, z, info = tracker.sample(o, y, w, z, lls[nS-1])
@@ -224,12 +235,19 @@ def testSwitch():
     jpt.io.save(f'{savePath}/sample-{nS:05}', {'z': z, 'w': w,
       'y': y, 'o': o, 'll': lls[nS]})
 
-    if nS % 20 == 0:
-      jpt.viz.plot_points2d_global(y)
-      jpt.viz.plot_tracks2d_global(w)
-      plt.show()
+    # if nS % 20 == 0:
+    #   jpt.viz.plot_points2d_global(y)
+    #   jpt.viz.plot_tracks2d_global(w)
+    #   plt.show()
     
+
   print(f'Accepted {accept} proposals, final LL is {lls[-1]:.2f}, initial LL was {lls[0]:.2f}')
+
+  jpt.viz.plot_points2d_global(y)
+  jpt.viz.plot_tracks2d_global(w)
+  plt.title(f'Final Sample, Log Joint: {lls[nS]:.2f}')
+  plt.savefig(f'{savePath}/final.pdf', bbox_inches='tight')
+  plt.close()
 
 
   # jpt.viz.plot_points2d_global(y)
