@@ -254,7 +254,13 @@ def ffbs(o, x, y, x0=None, return_ll=False):
     xs[idx] = mvn.rvs(mu, Sigma)
     ll += mvn.logpdf(xs[idx], mu, Sigma)
     tNext = t
-  for idx, (t, _) in enumerate(obs): x[int(t)] = xs[idx]
+
+  # for idx, (t, _) in enumerate(obs): x[int(t)] = xs[idx]
+
+  # only compute new values for x if we didn't already pass them in (if we did,
+  # then we're only computing logpdf here)
+  for idx, (t, _) in enumerate(obs):
+    if x[int(t)] is None: x[int(t)] = xs[idx]
 
   if return_ll:
     # handle denominators p(x_{t+1} | y_{1:t})
@@ -275,9 +281,12 @@ def ffbs(o, x, y, x0=None, return_ll=False):
       # print(llDenom)
       # ip.embed()
 
-      llDenom += mvn.logpdf( xs[idx+1], xh, Ph ) # x_{t+1} == xs[idx+1]
+      # llDenom += mvn.logpdf( xs[idx+1], xh, Ph ) # x_{t+1} == xs[idx+1]
 
-    print(f'll: {ll - llDenom:.2f}, llNum: {ll:.2f}, llDen: {llDenom:.2f}')
+      # pull from x, not xs, so we can just compute LL if desired
+      llDenom += mvn.logpdf( x[tNext], xh, Ph ) # x_{t+1} == xs[idx+1]
+
+    # print(f'll: {ll - llDenom:.2f}, llNum: {ll:.2f}, llDen: {llDenom:.2f}')
     ll -= llDenom
 
   if not return_ll: return x

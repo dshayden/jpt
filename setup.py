@@ -26,7 +26,11 @@ setup(
     license='MIT',
     description='Joint Posterior Multi-Object Tracker',
     packages=["jpt"],
-    scripts=['scripts/jpt_runPointTracker'],
+    scripts=[
+      'scripts/jpt_runPointTracker',
+      'scripts/jpt_evalX_conditional',
+      'scripts/jpt_samples2matlab'
+    ],
     install_requires=install_reqs,
     dependency_links=[
     ],

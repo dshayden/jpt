@@ -1,20 +1,54 @@
-import argparse, du
-import IPython as ip
-import numpy as np
-import json
-import jpt
+#!/usr/bin/env python
+
+import argparse, du, numpy as np, json, jpt
 
 def work(sampleFile):
   # return x, z
   D = jpt.io.load(sampleFile)
 
-  # associations z[t][j] == k <=> Object k is associated to y[t][j]
-  # z = D['z']._z
-
+  ## OPTION 01: just return sample with log p(x, z | y) up to proportionality
   w, y, z, o = ( D['w'], D['y'], D['z'], D['o'] ) 
-
   ll = D['ll']
-  # ########## Resample x | y, z to get log p(x | y, z) ##########
+
+  ## OPTION 02: get log p(x | y, z) without resampling
+  # w, y, z, o = ( D['w'], D['y'], D['z'], D['o'] ) 
+  # editDict_k = {}
+  # ll = 0.0
+  # for k in w.ks:
+  #   # build x, y dictionary for kalman.ffbs
+  #   zk = z.to(k)
+  #   ts_k = zk.keys()
+  #
+  #   xk = dict([ (t, w.x[k][1][t]) for t in ts_k])
+  #   yk = dict([(t, y[t][zk[t]]) for t in ts_k])
+  #   x0 = ( o.prior.mu0, o.prior.Sigma0 )
+  #   theta = w.x[k][0]
+  #   okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H,
+  #     Q=theta['Q'], R=theta['R'])
+  #
+  #   x_, ll_x = jpt.kalman.ffbs(okf, xk, yk, x0, return_ll=True)
+  #   ll += ll_x
+  #
+  #   ## Don't impute values for now
+  #   # ## impute missing values in x (only between beginning and end times of track)
+  #   # minT = min(ts_k)
+  #   # maxT = max(ts_k)
+  #   # x_impute = { t : ( x_[t] if t in x_ else None ) for t in y.ts if t >= minT and t <= maxT }
+  #   # assert np.setdiff1d(list(x_impute.keys()), range(1500)).size == 0
+  #   # x_imputed = jpt.kalman.state_estimate(okf, x_impute)
+  #   #
+  #   # ## add x_imputed keys back to x_impute
+  #   # for t in x_imputed: x_impute[t] = x_imputed[t][0]
+  #   # x_ = x_impute
+  #   # ## end impute
+  #
+  #   # editDict_k[k] = ( theta, x_ )
+
+  # ## 3: edit w
+  # w = w.edit(editDict_k, kind='k', inplace=False)
+  # ########## End Resample x | y, z to get log p(x | y, z) ##########
+
+  ## OPTION 03 (first way): Resample x | y, z to get log p(x | y, z) ##########
   # # code mostly copied from pointracker/proposals.py
   # editDict_k = {}
   # ll_x = 0.0
@@ -52,14 +86,8 @@ def work(sampleFile):
   # w = w.edit(editDict_k, kind='k', inplace=False)
   # ########## End Resample x | y, z to get log p(x | y, z) ##########
 
-
   # trajectories x
-  # x = [ D['w'].x[k][1] for k in D['w'].ks ]
-  # x = { k: D['w'].x[k][1] for k in D['w'].ks }
   x = { k: w.x[k][1] for k in w.ks }
-
-  # return x, D['z']._z, ll_x
- 
   return x, D['z']._z, ll
 
 def main(args):
@@ -89,7 +117,6 @@ def main(args):
     with open(f'{args.outfile}_sample_{nS:05}.json', 'w') as fid:
       json.dump(dct, fid)
 
-
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='')
   parser.add_argument('sampleDir', type=str, help='directory with jpt samples')
@@ -100,4 +127,3 @@ if __name__ == "__main__":
 
   args = parser.parse_args()
   args.func(args)
-

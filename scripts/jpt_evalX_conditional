@@ -1,0 +1,43 @@
+#!/usr/bin/env python
+
+import argparse, du, numpy as np, jpt
+
+def work(sampleX, sampleZ):
+  DX = jpt.io.load(sampleX)
+  DZ = jpt.io.load(sampleZ)
+
+  w, y, o = ( DX['w'], DX['y'], DX['o'] )
+  z = DZ['z']
+
+  ll = 0.0
+  for k in w.ks:
+    # build x, y dictionary for kalman.ffbs
+    zk = z.to(k)
+    ts_k = zk.keys()
+
+    xk = dict([ (t, w.x[k][1][t]) for t in ts_k])
+    yk = dict([(t, y[t][zk[t]]) for t in ts_k])
+    x0 = ( o.prior.mu0, o.prior.Sigma0 )
+    theta = w.x[k][0]
+    okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H,
+      Q=theta['Q'], R=theta['R'])
+
+    x_, ll_x = jpt.kalman.ffbs(okf, xk, yk, x0, return_ll=True)
+    ll += ll_x
+
+  # todo: handle noise-associated observations
+
+  return ll
+
+def main(args):
+  ll = work(args.sampleX, args.sampleZ)
+  print(ll)
+
+if __name__ == "__main__":
+  parser = argparse.ArgumentParser(description='')
+  parser.add_argument('sampleX', type=str, help='Sample to use X values from')
+  parser.add_argument('sampleZ', type=str, help='Sample to use Z values from')
+  parser.set_defaults(func=main)
+
+  args = parser.parse_args()
+  args.func(args)

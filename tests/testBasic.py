@@ -279,12 +279,16 @@ def testSampling():
   plt.show()
 
 def testPointInit():
-  # ifile = 'data/datasets/k22/gt.csv'
-  ifile = 'data/datasets/k22/dets.csv'
+  ifile = 'data/datasets/k22/gt.csv'
+  # ifile = 'data/datasets/k22/dets.csv'
   tracker = jpt.PointTracker
   o, y, w, z = tracker.init2d(ifile)
 
   ll = tracker.log_joint(o, y, w, z)
+
+  savePath = 'data/datasets/k22/true_sample'
+  jpt.io.save(f'{savePath}/true_sample', {'z': z, 'w': w, 'y': y, 'o': o,
+    'll': ll})
 
   # o.param.moveNames = ['split']
   # o.param.moveProbs = np.array([1.0,])
@@ -297,15 +301,12 @@ def testPointInit():
   print(info['accept'])
   print(info['ll_prop'])
 
-  # w_, z_, ll_, move, accepted = tracker.sample(o, y, w, z, ll)
-  # w_, z_, accepted, ll_ = tracker.sample(o, y, w, z, ll)
-
-  # print(accepted)
-  # print(ll_)
-
   plt.figure()
   jpt.viz.plot_points2d_global(y)
   jpt.viz.plot_tracks2d_global(w_)
+  plt.title('after sample')
+  plt.show()
+
 
   # ip.embed()
 
