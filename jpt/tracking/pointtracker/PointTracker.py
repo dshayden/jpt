@@ -70,8 +70,14 @@ def opts(ifile, dy, dx, **kwargs):
   #   lambda_b: new target birth rate per unit time unit volume
   param.lambda_b = kwargs.get('lambda_b', 0.01) 
 
-  param.moveNames = ['update', 'split', 'merge', 'switch', 'gather']
-  param.moveProbs = np.array([0.2, 0.1, 0.1, 0.5, 0.1])
+  # gather proposal skip probability
+  param.ps = kwargs.get('ps', 0.01) 
+
+  # param.moveNames = ['update', 'split', 'merge', 'switch', 'gather']
+  # param.moveProbs = np.array([0.2, 0.1, 0.1, 0.5, 0.1])
+  
+  param.moveNames = ['update', 'switch', 'gather', 'disperse', 'extend', 'split', 'merge']
+  param.moveProbs = np.array([0.2, 0.2, 0.2, 0.1, 0.1, 0.1, 0.1])
 
   # todo: sampler scheduling stuff?
   
@@ -263,15 +269,40 @@ def init_assoc_greedy_dumb(y, param, maxK=-1):
 
 def log_joint(o, y, w, z):
   ll = 0.0
+  
+  # # debugging
+  # ok = True
+  # for k in w.ks:
+  #   xkt = list(w.x[k][1].keys())
+  #   zkt = list(z.to(k).keys())
+  #   if len( np.intersect1d(xkt, zkt)  ) != len( xkt ): ok = False
+  # for k in z.ks:
+  #   xkt = list(w.x[k][1].keys())
+  #   zkt = list(z.to(k).keys())
+  #   if len( np.intersect1d(xkt, zkt)  ) != len( xkt ): ok = False
+  # # end debugging
+  # if not ok:
+  #   print("log_joint: x, z times do't match")
+  #   ip.embed()
+
+
 
   # track likelihoods
   for k in w.ks:
     theta, x_tks = w.x[k]
-    y_tks = dict([(t, y[t][z.to(k)[t]]) for t in x_tks.keys()])
+    try: 
+      y_tks = dict([(t, y[t][z.to(k)[t]]) for t in x_tks.keys()])
+    except:
+      print('problem with logJoint y_tks')
+      ip.embed()
     okf = jpt.kalman.opts(o.param.dy, o.param.dx, Q=theta['Q'], R=theta['R'],
       F=o.param.F, H=o.param.H)
     x0=(o.prior.mu0, o.prior.Sigma0)
     ll += jpt.kalman.joint_ll(okf, x_tks, y_tks, x0)
+
+  # noise observations
+  nNoise = np.sum( [ len(v) for v in z.to(0).values() ] )
+  ll += -10 * nNoise
 
   
   n_t = y.N #observations
@@ -358,6 +389,8 @@ def sample(o, y, w, z, ll):
   # if info['move'] in ['update',]: doAcceptTest = False
   else: doAcceptTest = True
 
+  # print(f"Trying {info['move']}")
+
   if info['move'] == 'update':
     w_, z_, valid, logq = jpt.PointTracker.proposals.update(o, y, w, z)
   elif info['move'] == 'split':
@@ -368,6 +401,10 @@ def sample(o, y, w, z, ll):
     w_, z_, valid, logq = jpt.PointTracker.proposals.switch(o, y, w, z)
   elif info['move'] == 'gather':
     w_, z_, valid, logq = jpt.PointTracker.proposals.gather(o, y, w, z)
+  elif info['move'] == 'disperse':
+    w_, z_, valid, logq = jpt.PointTracker.proposals.disperse(o, y, w, z)
+  elif info['move'] == 'extend':
+    w_, z_, valid, logq = jpt.PointTracker.proposals.extend(o, y, w, z)
   else:
     raise NotImplementedError(f"Don't support {move} proposal")
 

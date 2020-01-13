@@ -19,13 +19,16 @@ def mot15_point2d_to_obs(fname):
   return jpt.NdObservationSet(y)
 
 # Load 2D bbox from MOT 2015 formatted file
-def mot15_bbox_to_obs(fname):
+def mot15_bbox_to_obs(fname, **kwargs):
+  isPoints = kwargs.get('isPoints', True)
+
   df = pd.read_csv(fname, names=__mot2015)
   y = {}
   uniq = df.Frame.unique()
   for idx, t in enumerate(uniq):
     dft = df[df.Frame == t]
     obs = dft[ ['BBx', 'BBy', 'BBw', 'BBh'] ].values
+    if isPoints: obs = np.atleast_2d(obs)[:,:2]
     y[t] = obs
   return jpt.NdObservationSet(y)
 

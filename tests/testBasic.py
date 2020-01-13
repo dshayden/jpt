@@ -39,7 +39,45 @@ def testNoise():
 
   ip.embed()
 
+def testExtend():
+  ifile = 'data/datasets/k22/dets.csv'
+  tracker = jpt.PointTracker
+  dy, dx = (2, 4)
+  y = jpt.io.mot15_bbox_to_obs(ifile)
+  kwargs = tracker.data_dependent_priors(y)
+  o = tracker.opts(ifile, dy, dx, **kwargs)
+  w, z = tracker.init_assoc_noise(y)
+  ll = tracker.log_joint(o, y, w, z)
 
+  o.param.ps = 0.5
+  o.param.maxK = 1
+
+  w, z, valid, logq = tracker.proposals.gather(o, y, w, z)
+
+  plt.figure()
+  jpt.viz.plot_points2d_global(y)
+  jpt.viz.plot_tracks2d_global(w)
+  plt.title(f'Initial')
+  # plt.savefig(f'{savePath}/initial.pdf', bbox_inches='tight')
+  # plt.close()
+
+  o.param.ps = 0.03
+  w2, z2, valid2, logq2 = tracker.proposals.extend(o, y, w, z)
+
+  plt.figure()
+  jpt.viz.plot_points2d_global(y)
+  jpt.viz.plot_tracks2d_global(w2)
+  plt.title(f'Extend')
+  # plt.savefig(f'{savePath}/initial.pdf', bbox_inches='tight')
+  # plt.close()
+  plt.show()
+
+  ip.embed()
+
+  # assert np.isclose(logq + logq2, 0.0)
+  # assert len(w.ks) == len(z.ks) == (1 + len(z2.ks)) == (1 + len(w2.ks))
+
+# good test
 def testGather():
   ifile = 'data/datasets/k22/dets.csv'
   tracker = jpt.PointTracker
@@ -50,14 +88,14 @@ def testGather():
   w, z = tracker.init_assoc_noise(y)
   ll = tracker.log_joint(o, y, w, z)
 
-  # o, y, w, z = tracker.init2d(ifile)
-  # ll = tracker.log_joint(o, y, w, z)
+  o.param.ps = 0.25
+  o.param.maxK = 2
 
-  # draw switch sample
-  o.param.moveNames = ['gather']
-  o.param.moveProbs = np.array([1.0,])
+  w, z, valid, logq = tracker.proposals.gather(o, y, w, z)
+  w2, z2, valid2, logq2 = tracker.proposals.disperse(o, y, w, z)
 
-  w, z, info = tracker.sample(o, y, w, z, ll)
+  assert np.isclose(logq + logq2, 0.0)
+  assert len(w.ks) == len(z.ks) == (1 + len(z2.ks)) == (1 + len(w2.ks))
 
 
 def testTrackingWithErodedMean():
@@ -265,12 +303,20 @@ def testSampling():
   ifile = 'data/datasets/k22/dets.csv'
   # ifile = 'data/datasets/k22/gt.csv'
   tracker = jpt.PointTracker
-  o, y, w, z = tracker.init2d(ifile)
+  # o, y, w, z = tracker.init2d(ifile)
   # o.param.lambda_track_length = len(y.ts)
-  o.param.lambda_track_length = 300.0
+  # o.param.lambda_track_length = 300.0
+  # ll = tracker.log_joint(o, y, w, z)
+
+  dy, dx = (2, 4)
+  y = jpt.io.mot15_bbox_to_obs(ifile)
+  kwargs = tracker.data_dependent_priors(y)
+  o = tracker.opts(ifile, dy, dx, **kwargs)
+  w, z = tracker.init_assoc_noise(y)
   ll = tracker.log_joint(o, y, w, z)
 
-  nSamples = 500
+  nSamples = 200
+  # nSamples = 50
   accept = 0
   lls = np.zeros(nSamples)
   lls[0] = ll

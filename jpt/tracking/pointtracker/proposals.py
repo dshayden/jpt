@@ -5,89 +5,328 @@ from scipy.stats import poisson
 import numpy as np
 import IPython as ip
 
-def gather(o, y, w, z):
-  # Randomly sample noise-associated observation
+def extend(o, y, w, z):
+  # check that we have tracks to disperse
+  if not z.ks: return w, z, False, 0.0
   z0 = z.to(0)
-  cnts = [ len(zt0) for zt0 in z0.items() ]
-  cntsCum = np.cumsum(cnts)
-  i = np.random.choice(range(np.sum(cnts)))
 
-  ip.embed()
+  # randomly sample an existing track
+  k = np.random.choice(z.ks)
+  zk = z.to(k)
+  if len(zk.keys()) == 1 or len(z0.keys()) == 0: return w, z, False, 0.0
 
-  return w, z, False, 0.0
+  # randomly sample a direction
+  d = np.random.choice([-1, 1])
+
+  # arrange times in ascending (d=1) or descending (d=-1) order, starting from
+  # first (d=1) or last (d=-1) track association time
+  fixedObs_t = min(zk.keys()) if d==1 else max(zk.keys())
+  t0 = [ t for t in z0.keys() if d*t > d*fixedObs_t ]
+  tk = [ t for t in zk.keys() if d*t > d*fixedObs_t ]
+  ts = sorted(list(np.unique(t0 + tk)))
+  if d == -1: ts = ts[::-1]
+  t = fixedObs_t
+
+  # construct two filters, one for old -> new (o2n) and one for new -> old (n2o)
+  # initialize them on association at fixedObs_t
+  okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H)
+  ytn = y[t][zk[fixedObs_t]]
+  lastT = fixedObs_t
+
+  muX_o2n, SigmaX_o2n = jpt.kalman.predict(okf, o.prior.mu0, o.prior.Sigma0)
+  muX_o2n, SigmaX_o2n, _ = jpt.kalman.filter(okf, muX_o2n, SigmaX_o2n, ytn)
+  muX_n2o, SigmaX_n2o = ( muX_o2n.copy(), SigmaX_o2n.copy() )
+
+  # precompute and initialize
+  log_ps = np.log(o.param.ps)
+  log_1ps = np.log(1 - o.param.ps)
+  q_old_given_new = q_new_given_old = 0.0
+
+  # old_given_new: recovering the existing track, no sampling
+  # new_given_old: choosing new track, sampling involved
+
+  # just sample new track in this loop, already complicated enough
+  editDict_tkj = {}
+  for t in ts:
+    # skip probability
+    if np.random.rand() < o.param.ps:
+      q_new_given_old += log_ps
+      if t in zk.keys():
+        # add zk[t] to noise
+        if t in z0.keys() and t in zk.keys():
+          noiseObs = sorted([int(j) for j in z0[t] + [zk[t],]])
+        elif t in z0.keys() and t not in zk.keys():
+          noiseObs = z0[t]
+        elif t in zk.keys() and t not in z0.keys():
+          noiseObs = [ int(zk[t]), ]
+
+        # noiseObs = sorted([int(j) for j in z0[t] + [zk[t],]])
+
+        editDict_tkj[(t,0)] = noiseObs
+      continue
+    q_new_given_old += log_1ps
+
+    # predict step
+    for t_ in range(np.abs(lastT - t)):
+      muX_o2n, SigmaX_o2n = jpt.kalman.predict(okf, muX_o2n, SigmaX_o2n)
+    muY_o2n, SigmaY_o2n = jpt.kalman.StateToObs(okf, muX_o2n, SigmaX_o2n)
+    SigmaYi_o2n = np.linalg.inv(SigmaY_o2n)
+    lastT = t
+
+    # compute track-obs distances
+    if t in z0.keys() and t in zk.keys():
+      obs_t = np.concatenate((z0[t], [zk[t], ] ))
+    elif t in z0.keys() and t not in zk.keys():
+      obs_t = z0[t]
+    elif t in zk.keys() and t not in z0.keys():
+      obs_t = [ zk[t], ]
+
+    # if t in zk.keys(): obs_t = np.concatenate((z0[t], [zk[t], ] ))
+    # else: obs_t = z0[t]
+
+    logpObs = np.zeros(len(obs_t))
+    for idx, j in enumerate(obs_t):
+      # track <-> obs distance to obs
+      ytn = y[t][j]
+      logpObs[idx] = -0.5 * mahalanobis(ytn, muY_o2n, SigmaYi_o2n)
+
+    pObs = np.exp(logpObs - logsumexp(logpObs))
+    jIdx = np.random.choice(np.arange(len(pObs)), p=pObs)
+    if t in zk.keys() and zk[t] != obs_t[jIdx]:
+      # adjust noise associations at time t
+      noiseObs = sorted([int(j) for j in z0[t] + [zk[t],] if j != obs_t[jIdx]])
+      editDict_tkj[(t,0)] = noiseObs
+    editDict_tkj[(t, k)] = obs_t[jIdx]
+    q_new_given_old += logpObs[jIdx]
+
+    # propagate kalman filter forward for track-obs distance
+    ytn = y[t][obs_t[jIdx]]
+    muX_o2n, SigmaX_o2n, _ = jpt.kalman.filter(okf, muX_o2n, SigmaX_o2n, ytn)
+
+  z_ = z.edit(editDict_tkj, kind='tkj', inplace=False)
+
+  # now resample w
+
+  editDict_k = {}
+  theta = dict(Q=okf.Q, R=okf.R, mu0=o.prior.mu0)
+  xkNew, ykNew = ( {}, {} )
+  for t, j in z_.to(k).items():
+    xkNew[t] = None
+    ykNew[t] = y[t][j]
+  xkNew = jpt.kalman.ffbs(okf, xkNew, ykNew, x0=(o.prior.mu0, o.prior.Sigma0))
+  editDict_k[int(k)] = ( theta, xkNew )
+
+  # remove then put back in
+  w_ = w.edit({k: None}, kind='k', inplace=False)
+  w_ = w_.edit(editDict_k, kind='k', inplace=False)
+
+  # reverse probability move
+  lastT = fixedObs_t
+  for t in ts:
+    # skip probability
+    if t not in zk:
+      q_old_given_new += log_ps
+      continue
+    q_old_given_new += log_1ps
+
+    # predict step
+    for t_ in range(np.abs(lastT - t)):
+      muX_n2o, SigmaX_n2o = jpt.kalman.predict(okf, muX_n2o, SigmaX_n2o)
+      muY_n2o, SigmaY_n2o = jpt.kalman.StateToObs(okf, muX_n2o, SigmaX_n2o)
+      SigmaYi_n2o = np.linalg.inv(SigmaY_n2o)
+    lastT = t
+
+    # compute track-obs distances
+    if t in z0.keys() and t in zk.keys():
+      obs_t = np.concatenate((z0[t], [zk[t], ] ))
+    elif t in z0.keys() and t not in zk.keys():
+      obs_t = z0[t]
+    elif t in zk.keys() and t not in z0.keys():
+      obs_t = [ zk[t], ]
+
+    # obs_t = np.concatenate((z0[t], [zk[t], ] ))
+
+    ytn = y[t][zk[t]]
+    logpObs_single = -0.5 * mahalanobis(ytn, muY_n2o, SigmaYi_n2o)
+    q_old_given_new += logpObs_single
+
+    # propagate kalman filter forward for track-obs distance
+    muX_n2o, SigmaX_n2o, _ = jpt.kalman.filter(okf, muX_n2o, SigmaX_n2o, ytn)
+
+  # debugging
+  for k_ in w_.ks:
+    theta, x_tks = w_.x[k_]
+    x_ts = list(x_tks.keys())
+    z_ts = list(z_.to(k_).keys())
+    missing = np.setdiff1d(np.union1d(x_ts,z_ts), np.intersect1d(x_ts,z_ts))
+    if len(missing)>0:
+      print('Problem in extend')
+      ip.embed()
 
 
-# def gather(o, y, w, z):
-#   # Randomly sample observation
-#   nObs = np.sum(list(y.N.values()))
-#   i = np.random.choice(range(nObs))
-#   q_new_given_old = -np.log(nObs)
-#   t0, j0 = y.i2tj(i)
-#   assert y.tj2i(t0,j0) == i
-#   
-#   ts, js = ( [t0,], [j0,] )
-#   maxT = max(y.ts)
-#   while True:
-#     # Randomly sample stop probability
-#     stopProb = 0.05 # todo: make parameter
-#     stop = np.random.rand() < stopProb
-#     if stop: 
-#       q_new_given_old += np.log(stopProb)
-#       break
-#     q_new_given_old += np.log(1 - stopProb)
-#
-#     # Randomly sample step d
-#     gatherPoissonLambda = 0.2 # todo: put in param
-#     d = 1 + poisson.rvs(gatherPoissonLambda)
-#     q_new_given_old += poisson.logpmf(d-1, gatherPoissonLambda)
-#     if ts[-1] + d > maxT: break
-#
-#     # Compute pairwise distances of previous observation to all in next   
-#     #   todo: account for all past associations in computing distance
-#     yPrev = y[ts[-1]][js[-1]][np.newaxis]
-#     yNext = y[ts[-1]+d]
-#     dists = -0.5 * cdist(yPrev, yNext)[0]
-#     probs = np.exp(dists - logsumexp(dists))
-#
-#     j = np.random.choice(np.arange(len(probs)), p=probs)
-#     q_new_given_old += dists[j]
-#
-#     js.append(j)
-#     ts.append( ts[-1]+d )
-#
-#   # construct new hypothesis
-#   kNew = z.next_k()
-#   editDict_tkj = { (t, kNew): j for t, j in zip(ts, js) }
-#   z_ = z.edit(editDict_tkj, kind='tkj', inplace=False)
-#
-#   editDict_k = {}
-#   
-#   # remove old tracks and latent states stored to tracks which lost associations
-#   # todo: update because it is broken with noise associations
-#   removedK = np.setdiff1d(z.ks, z_.ks) 
-#   for k in removedK: editDict_k[k] = None
-#   for t, j in zip(ts, js):
-#     kOld = z[t][j]
-#     if kOld in removedK: continue
-#     if kOld not in editDict_k: editDict_k[kOld] = (None, {})
-#     editDict_k[kOld][1][t] = None
-#
-#   # add new track; set theta parameters and infer latent state sequence
-#   okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H)
-#   theta = dict(Q=okf.Q, R=okf.R, mu0=o.prior.mu0)
-#   xkNew, ykNew = ( {}, {} )
-#   for t, j in zip(ts, js):
-#     xkNew[t] = None
-#     ykNew[t] = y[t][j]
-#   xkNew = jpt.kalman.ffbs(okf, xkNew, ykNew, x0=(o.prior.mu0, o.prior.Sigma0))
-#   editDict_k[int(kNew)] = ( theta, xkNew )
-#   w_ = w.edit(editDict_k, kind='k', inplace=False)
-#   
-#   q_old_given_new = -np.log( len(w_.ks) )
-#   # todo: handle assignment probs in q_old_given_new (based on # tracks that can
-#   # accept observation (t,j).
-#
-#   return w_, z_, True, q_old_given_new - q_new_given_old
+  # end debugging
+  
+
+
+  return w_, z_, True, q_old_given_new - q_new_given_old
+
+def disperse(o, y, w, z):
+  # check that we have tracks to disperse
+  if not z.ks: return w, z, False, 0.0
+
+  # randomly sample an existing track
+  k = np.random.choice(z.ks)
+  q_new_given_old = -np.log(len(z.ks))
+
+  # determine reverse move probability
+  q_old_given_new = 0.0
+
+  ## get all times with noise-associated observations
+  z0 = z.to(0)
+
+  ## get all times from track associations
+  zk = z.to(k)
+  zkLast_t = max(zk.keys())
+
+  ## list of all times from which track k was constructed
+  ts = sorted(list(np.unique((list(z0.keys()) + list(zk.keys())))))
+
+  # precompute
+  log_ps = np.log(o.param.ps)
+  log_1ps = np.log(1 - o.param.ps)
+
+  ## setup filter
+  muX = o.prior.mu0.copy()
+  SigmaX = o.prior.Sigma0.copy()
+  okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H)
+
+  lastT = -1
+  noTrackYet = True
+  for t in ts:
+
+    # skip probability
+    if t not in zk:
+      q_old_given_new += log_ps
+      continue
+    q_old_given_new += log_1ps
+
+    # predict step from lastT .. now
+    if lastT != -1:
+      for t_ in range(lastT, t+1):
+        muX, SigmaX = jpt.kalman.predict(okf, muX, SigmaX)
+      muY, SigmaY = jpt.kalman.StateToObs(okf, muX, SigmaX)
+      SigmaYi = np.linalg.inv(SigmaY)
+    lastT = t
+
+    # compute track-obs distances
+    if t in z0.keys() and t in zk.keys():
+      obs_t = np.concatenate((z0[t], [zk[t], ] ))
+    elif t in z0.keys() and t not in zk.keys():
+      obs_t = z0[t]
+    elif t in zk.keys() and t not in z0.keys():
+      obs_t = [ zk[t], ]
+
+    logpObs = np.zeros(len(obs_t))
+    for idx, j in enumerate(obs_t):
+      # if there's no track yet
+      if noTrackYet:
+        noTrackYet = False
+        break
+
+      # track <-> obs distance to obs
+      ytn = y[t][j]
+      logpObs[idx] = -0.5 * mahalanobis(ytn, muY, SigmaYi)
+
+    jIdx = len(obs_t)-1
+    q_old_given_new += logpObs[jIdx]
+
+    # propagate kalman filter forward for track-obs distance
+    ytn = y[t][obs_t[jIdx]]
+    muX, SigmaX, _ = jpt.kalman.filter(okf, muX, SigmaX, ytn)
+
+  editDict_tkj = { (t,0): j for t, j in zk.items() }
+  z_ = z.edit(editDict_tkj, kind='tkj', inplace=False)
+  w_ = w.edit({k: None}, kind='k', inplace=False)
+
+  return w_, z_, True, q_old_given_new - q_new_given_old
+
+
+def gather(o, y, w, z):
+  # check if we can create a new track
+  if len(z.ks) == o.param.maxK: return w, z, False, 0.0
+
+  # get all times with noise-associated observations
+  z0 = z.to(0)
+  ts = z0.keys()
+  if len(ts) == 0: return w, z, False, 0.0
+
+  q_new_given_old = 0.0
+  log_ps = np.log(o.param.ps)
+  log_1ps = np.log(1 - o.param.ps)
+
+  # maintain filter distribution
+  muX = o.prior.mu0.copy()
+  SigmaX = o.prior.Sigma0.copy()
+  okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H)
+
+  lastT = -1
+
+  kNew = z.next_k()
+  editDict_tkj = {}
+  for t in ts:
+    # skip probability
+    if np.random.rand() < o.param.ps:
+      q_new_given_old += log_ps
+      continue
+    q_new_given_old += log_1ps
+
+    # predict step from lastT .. now
+    if lastT != -1:
+      for t_ in range(lastT, t+1):
+        muX, SigmaX = jpt.kalman.predict(okf, muX, SigmaX)
+      muY, SigmaY = jpt.kalman.StateToObs(okf, muX, SigmaX)
+      SigmaYi = np.linalg.inv(SigmaY)
+    lastT = t
+
+    # compute track-obs distances
+    obs_t = z0[t]
+    logpObs = np.zeros(len(obs_t))
+    for idx, j in enumerate(obs_t):
+      # if there's no track yet
+      if len(editDict_tkj) == 0: break
+
+      # track <-> obs distance to obs
+      ytn = y[t][j]
+      logpObs[idx] = -0.5 * mahalanobis(ytn, muY, SigmaYi)
+
+    pObs = np.exp(logpObs - logsumexp(logpObs))
+    jIdx = np.random.choice(np.arange(len(pObs)), p=pObs)
+    q_new_given_old += logpObs[jIdx]
+    editDict_tkj[(t, kNew)] = obs_t[jIdx]
+
+    # propagate kalman filter forward for track-obs distance
+    ytn = y[t][obs_t[jIdx]]
+    muX, SigmaX, _ = jpt.kalman.filter(okf, muX, SigmaX, ytn)
+
+  if len(editDict_tkj) == 0: return w, z, False, 0.0
+
+  z_ = z.edit(editDict_tkj, kind='tkj', inplace=False)
+
+  # now sample, make edited w with this new track
+  editDict_k = {}
+  theta = dict(Q=okf.Q, R=okf.R, mu0=o.prior.mu0)
+  xkNew, ykNew = ( {}, {} )
+  for t, j in z_.to(kNew).items():
+    xkNew[t] = None
+    ykNew[t] = y[t][j]
+  xkNew = jpt.kalman.ffbs(okf, xkNew, ykNew, x0=(o.prior.mu0, o.prior.Sigma0))
+  editDict_k[int(kNew)] = ( theta, xkNew )
+  w_ = w.edit(editDict_k, kind='k', inplace=False)
+
+  q_old_given_new = -np.log(len(w_.ks)) # random choice of 1/k
+
+  return w_, z_, True, q_old_given_new - q_new_given_old
+
 
 def update(o, y, w, z):
   # resample latent parameters, w
@@ -133,7 +372,7 @@ def switch(o, y, w, z):
     return -0.5 * mahalanobis(x1, np.dot(o.param.F, x2), Qi[k])
 
   def costxy(t, k, xtk, ytk):
-    # costxy is where annotations get handled
+    # costxy is also where annotations get handled
     return -0.5 * mahalanobis(ytk, np.dot(o.param.H, xtk), Ri[k])
 
   def val(t,k):
@@ -179,6 +418,8 @@ def switch(o, y, w, z):
 
 def split(o, y, w, z):
   """ Sample a random split proposal for UniqueBijectiveAssociation, z. """
+  if len(z.ks) == o.param.maxK: return w, z, False, 0.0
+
   splits = possible_splits(z)
   if len(splits) == 0: return w, z, False, 0.0
   k1, t_ = splits[ np.random.choice(len(splits)) ]
@@ -211,6 +452,8 @@ def split(o, y, w, z):
 
 def merge(o, y, w, z):
   """ Sample a random merge proposal for UniqueBijectiveAssociation, z. """
+  if not z.ks: return w, z, False, 0.0
+
   merges = possible_merges(z)
   if len(merges) == 0: return w, z, False, 0.0
   k1, k2 = merges[ np.random.choice(len(merges)) ]
