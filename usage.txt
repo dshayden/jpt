@@ -4,5 +4,5 @@ Convert directory of jpt-formatted samples to json files:
   jpt_samples2matlab samples/jpt samples/matlab/k22
 
 Print log p(x | z, y) for x from JPT sample file samplesX.gz using z from JPT
-sample file samplesZ.gz
-  jpt_evalX_conditional samplesX samplesY
+sample files samplesZ_1, samplesZ_2, samplesZ_3, ...
+  jpt_evalX_conditional sampleX samplesZ_1 samplesZ_2 samplesZ_3 ...

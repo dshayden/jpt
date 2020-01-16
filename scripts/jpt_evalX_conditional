@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import matplotlib
+matplotlib.use("Agg")
 import argparse, numpy as np, jpt, sys, du
 import IPython as ip
 

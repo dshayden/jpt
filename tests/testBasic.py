@@ -5,6 +5,51 @@ import IPython as ip
 import copy
 np.set_printoptions(precision=2, suppress=True)
 
+def testSwitchReverse():
+  # ifile = 'data/datasets/k22/gt.csv'
+  ifile = 'data/datasets/k22/dets.csv'
+  tracker = jpt.PointTracker
+  o, y, w, z = tracker.init2d(ifile)
+  o.param.fixedK = 2
+
+  okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H)
+  param = dict(Q=okf.Q, R=okf.R, mu0=o.prior.mu0)
+  w, z = tracker.init_assoc_greedy_dumb(y, param, maxK=o.param.fixedK)
+  # w, z = tracker.init_assoc_noise(y, maxK=2)
+
+  ll = tracker.log_joint(o, y, w, z)
+
+  # draw switch sample
+  o.param.moveNames = ['switch']
+  o.param.moveProbs = np.array([1.0])
+
+  nSamples = 100
+  accept = 0
+  lls = np.zeros(nSamples)
+  lls[0] = ll
+
+  nS = 0
+  print(nS, 'init', lls[nS])
+
+  for nS in range(1,nSamples):
+    w, z, info = tracker.sample(o, y, w, z, lls[nS-1])
+    if info['accept'] == True: lls[nS] = info['ll_prop']
+    else: lls[nS] = lls[nS-1]
+
+    logA = info['logA']
+    print(f"logA: {logA:.2f}, ll: {lls[nS]:.2f}")
+    # print(info)
+
+  assert len(z.to(0).keys()) == 0
+
+    # if info['accept'] == True:
+    #   lls[nS] = info['ll_prop']
+    #   accept += 1
+    #   print(nS, info['move'], lls[nS])
+    # else:
+    #   lls[nS] = lls[nS-1]
+
+
 def testNoise():
   warnings.filterwarnings("error")
 
@@ -228,14 +273,14 @@ def testSwitch():
 
   okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H)
   param = dict(Q=okf.Q, R=okf.R, mu0=o.prior.mu0)
-  w, z = tracker.init_assoc_greedy_dumb(y, param, maxK=2)
+  w, z = tracker.init_assoc_greedy_dumb(y, param, maxK=o.param.fixedK)
   # w, z = tracker.init_assoc_noise(y, maxK=2)
 
   ll = tracker.log_joint(o, y, w, z)
 
   # draw switch sample
-  o.param.moveNames = ['update', 'switch']
-  o.param.moveProbs = np.array([0.5, 0.5])
+  o.param.moveNames = ['switch']
+  o.param.moveProbs = np.array([1.0, 0.5])
 
   nSamples = 1000
   accept = 0
@@ -258,7 +303,6 @@ def testSwitch():
   
   for nS in range(1,nSamples):
     w, z, info = tracker.sample(o, y, w, z, lls[nS-1])
-
 
     if info['accept'] == True:
       lls[nS] = info['ll_prop']
@@ -303,11 +347,14 @@ def testSampling():
   ifile = 'data/datasets/k22/dets.csv'
   # ifile = 'data/datasets/k22/gt.csv'
   tracker = jpt.PointTracker
+
+  # init style 1
   # o, y, w, z = tracker.init2d(ifile)
   # o.param.lambda_track_length = len(y.ts)
-  # o.param.lambda_track_length = 300.0
+  # o.param.ps = 0.5
   # ll = tracker.log_joint(o, y, w, z)
 
+  # init style 2
   dy, dx = (2, 4)
   y = jpt.io.mot15_bbox_to_obs(ifile)
   kwargs = tracker.data_dependent_priors(y)
@@ -315,7 +362,7 @@ def testSampling():
   w, z = tracker.init_assoc_noise(y)
   ll = tracker.log_joint(o, y, w, z)
 
-  nSamples = 200
+  nSamples = 500
   # nSamples = 50
   accept = 0
   lls = np.zeros(nSamples)
