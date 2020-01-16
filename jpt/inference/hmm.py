@@ -33,13 +33,17 @@ def build(t0, x0, ts, ks, val, costxx, costxy):
   # build unnormalized log transition matrix
   Psi = np.zeros((T-1, nPerms, nPerms))
   for idx in range(T-1):
-    tPrime, t = ( ts[idx], ts[idx+1] )
-    for cPrime, pPrime in enumerate(perms):
-      for c, p in enumerate(perms):
+    tPrime, t = ( ts[idx], ts[idx+1] ) # tPrime is smaller if we're going fwd, which we are
+    for cPrime, pPrime in enumerate(perms): # cPrime indexes perms, pPrime is a perm
+      for c, p in enumerate(perms): # c indexes perms, p is a perm
         for k in range(K): # compute over each k (pPrime[k], p[k])
-          xtPrime, _, _ = vs[idx][pPrime[k]]
+          xtPrime, _, _ = vs[idx][pPrime[k]] # this seems off maybe? hmm...
           xt, yt, _ = vs[idx+1][p[k]]
-          Psi[idx, cPrime, c] += costxx(tPrime, xtPrime, t, xt, ks[k])
+          # idx indices are correct
+          # what about pPrime[k] -> p[k] ?
+
+          # Psi[idx, cPrime, c] += costxx(tPrime, xtPrime, t, xt, ks[k])
+          Psi[idx, cPrime, c] += costxx(t, xt, tPrime, xtPrime, ks[k])
           Psi[idx, cPrime, c] += costxy(t, ks[k], xt, yt)
 
   # build unnormalized log prior
@@ -51,11 +55,14 @@ def build(t0, x0, ts, ks, val, costxx, costxy):
       tPrime = t0[k]
       xtPrime = x0[k]
       xt, yt, _ = vs[idx+1][p[k]]
-      pi[c] += costxx(tPrime, xtPrime, t, xt, ks[k])
+      pi[c] += costxx(t, xt, tPrime, xtPrime, ks[k])
       pi[c] += costxy(t, ks[k], xt, yt)
 
   # normalize and return
   Psi = np.exp(Psi - logsumexp(Psi, axis=2, keepdims=True))
+
+  print(Psi)
+
   pi = np.exp(pi - logsumexp(pi))
   psi = [ None for t in ts ]
   return perms, pi, Psi, psi
@@ -75,12 +82,17 @@ def ffbs(pi, Psi, psi):
     a[t] /= np.sum(a[t])
 
   # backward sampling
+  ll = 0.0
+  default_ll = 0.0
   x = -1 * np.ones(T, dtype=np.int)
 
   b = np.zeros((T, K))
   b[-1] = a[-1]
 
   x[-1] = du.stats.catrnd(b[-1][np.newaxis])
+  ll += np.log( b[-1, x[-1]] )
+  default_ll += np.log( b[-1, 0] )
+
   for t in reversed(range(T-1)):
     j = x[t+1]
 
@@ -96,5 +108,22 @@ def ffbs(pi, Psi, psi):
     b[t] /= np.sum(b[t])
 
     x[t] = du.stats.catrnd(b[t][np.newaxis])
+    ll += np.log( b[t, x[t]] )
+    default_ll += np.log( b[t, 0] )
 
-  return [ int(x_) for x_ in x ]
+  return [ int(x_) for x_ in x ], ll, default_ll
+
+def sample(pi, Psi, psi):
+  T, K = (Psi.shape[0]+1, Psi.shape[1])
+
+  default_ll = np.log(pi[0])
+  for t in range(1,T): default_ll += Psi[t-1,0, 0]
+
+  x = -1 * np.ones(T, dtype=np.int)
+  x[0] = du.stats.catrnd(pi[np.newaxis])
+  ll = np.log(pi[x[0]])
+  for t in range(1,T):
+    x[t] = du.stats.catrnd(Psi[t-1, x[t-1]][np.newaxis])
+    ll += np.log(Psi[t-1, x[t-1], x[t]])
+
+  return [ int(x_) for x_ in x ], ll, default_ll

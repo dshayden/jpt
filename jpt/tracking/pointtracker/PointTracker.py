@@ -37,6 +37,7 @@ def opts(ifile, dy, dx, **kwargs):
   param.dx = dx
   param.ifile = ifile
   param.F = kwargs.get('F', np.block([[eye, eye], [zer, eye]]))
+  # param.F = kwargs.get('F', np.block([[eye, zer], [zer, zer]]))
   param.H = kwargs.get('H', np.block([[eye, zer]]))
 
   # fixed-K additions
@@ -73,14 +74,15 @@ def opts(ifile, dy, dx, **kwargs):
   # gather proposal skip probability
   param.ps = kwargs.get('ps', 0.01) 
 
-  # param.moveNames = ['update', 'split', 'merge', 'switch', 'gather']
-  # param.moveProbs = np.array([0.2, 0.1, 0.1, 0.5, 0.1])
-  
+  # log annotation agreement probability
+  #   stored as log because we'll underflow around log(1e-300) == -690
+  #   and we might want very strong penalties for inconsistency
+  param.log_pa = kwargs.get('log_pa', -1000)
+
+  # generic sampler scheduling
   param.moveNames = ['update', 'switch', 'gather', 'disperse', 'extend', 'split', 'merge']
   param.moveProbs = np.array([0.2, 0.2, 0.2, 0.1, 0.1, 0.1, 0.1])
 
-  # todo: sampler scheduling stuff?
-  
   # set priors
   ## x_{1k} ~ N(mu0, Sigma0)
   prior.mu0 = kwargs.get('mu0', np.zeros(dx))
@@ -267,110 +269,73 @@ def init_assoc_greedy_dumb(y, param, maxK=-1):
   return w, z
 
 
-def log_joint(o, y, w, z):
+def log_joint(o, y, w, z, **kwargs):
   ll = 0.0
   
-  # # debugging
-  # ok = True
-  # for k in w.ks:
-  #   xkt = list(w.x[k][1].keys())
-  #   zkt = list(z.to(k).keys())
-  #   if len( np.intersect1d(xkt, zkt)  ) != len( xkt ): ok = False
-  # for k in z.ks:
-  #   xkt = list(w.x[k][1].keys())
-  #   zkt = list(z.to(k).keys())
-  #   if len( np.intersect1d(xkt, zkt)  ) != len( xkt ): ok = False
-  # # end debugging
-  # if not ok:
-  #   print("log_joint: x, z times do't match")
-  #   ip.embed()
-
-
-
   # track likelihoods
   for k in w.ks:
     theta, x_tks = w.x[k]
-    try: 
-      y_tks = dict([(t, y[t][z.to(k)[t]]) for t in x_tks.keys()])
-    except:
-      print('problem with logJoint y_tks')
-      ip.embed()
+    y_tks = dict([(t, y[t][z.to(k)[t]]) for t in x_tks.keys()])
     okf = jpt.kalman.opts(o.param.dy, o.param.dx, Q=theta['Q'], R=theta['R'],
       F=o.param.F, H=o.param.H)
     x0=(o.prior.mu0, o.prior.Sigma0)
     ll += jpt.kalman.joint_ll(okf, x_tks, y_tks, x0)
 
-  # noise observations
-  nNoise = np.sum( [ len(v) for v in z.to(0).values() ] )
-  ll += -10 * nNoise
-
-  
-  n_t = y.N #observations
-  d_t = { t: 0 for t in y.ts } #detections
-  f_t = { t: 0 for t in y.ts } #false alarms
-
-  for t in y.ts:
-    d_t[t] = np.sum(z[t] > 0)
-    f_t[t] = np.sum(z[t] == 0)
-
-  z_t = { t: 0 for t in y.ts } #track terminations
-  for k in w.ks: z_t[ max(w.x[k][1].keys()) ] += 1
-
-  e_t1 = { t: 0 for t in y.ts } #existing targets
-  a_t = { t: 0 for t in y.ts } #new targets
-  for k in z.ks:
-    minTime = min(z.to(k).keys())
-    maxTime = max(z.to(k).keys())
-
-    # new targets at time t
-    a_t[minTime] += 1
-
-    # targets at time t
-    for t in range(minTime, maxTime+1): e_t1[t] += 1
-
-  logPz = np.log(o.param.pz)
-  log1Pz = np.log(1 - o.param.pz)
-  logPd = np.log(o.param.pd)
-  log1Pd = np.log(1 - o.param.pd)
-  logLambda_b = np.log(o.param.lambda_b)
-  logLambda_f = np.log(o.param.lambda_f)
-  for t in y.ts:
-    if t-1 in e_t1: et = e_t1[t-1]
-    else: et = 0
-    ct = et - z_t[t]
-    ut = ct + a_t[t] - d_t[t]
-
-    ll += z_t[t] * logPz + ct * log1Pz
-    ll += d_t[t] * logPd + ut * log1Pd
-    ll += a_t[t] * logLambda_b
-    ll += f_t[t] * logLambda_f
-
-  # count false alarms, etc.
-  # x Bin(z_t | e_t, pz)
-  #   z_t : # terminated targets at time t
-  #   e_t : # targets at time t-1
-  #   pz  : probability of target disappearance
-
-  # x Bin(d_t | n_t, pd)
-  #   d_t : # detections at time t
-  #   n_t : # observations at time t
-  #   pd  : probability of target detection
-  
-  # x Pois(a_t | lambda_b)
-  #   a_t : # new targets at time t
-  #   lambda_b : new target birth rate per unit time unit volume
-
-  # x Pois(f_t | lambda_f)
-  #   f_t : # false alarms at time t
-  #   lambda_f : false-alarm rate per unit time unit volume 
-  
-
-  # # track association lengths
-  # if o.param.lambda_track_length is not None:
-  #   for k in w.ks:
-  #     theta, x_tks = w.x[k]
-  #     nAssoc = len(x_tks)
-  #     ll += poisson.logpmf(nAssoc, o.param.lambda_track_length)
+  ### comment everything else out during testing
+  # # noise observations
+  # nNoise = np.sum( [ len(v) for v in z.to(0).values() ] )
+  # ll += -10 * nNoise
+  #
+  #
+  # n_t = y.N #observations
+  # d_t = { t: 0 for t in y.ts } #detections
+  # f_t = { t: 0 for t in y.ts } #false alarms
+  #
+  # for t in y.ts:
+  #   d_t[t] = np.sum(z[t] > 0)
+  #   f_t[t] = np.sum(z[t] == 0)
+  #
+  # z_t = { t: 0 for t in y.ts } #track terminations
+  # for k in w.ks: z_t[ max(w.x[k][1].keys()) ] += 1
+  #
+  # e_t1 = { t: 0 for t in y.ts } #existing targets
+  # a_t = { t: 0 for t in y.ts } #new targets
+  # for k in z.ks:
+  #   minTime = min(z.to(k).keys())
+  #   maxTime = max(z.to(k).keys())
+  #
+  #   # new targets at time t
+  #   a_t[minTime] += 1
+  #
+  #   # targets at time t
+  #   for t in range(minTime, maxTime+1): e_t1[t] += 1
+  #
+  # logPz = np.log(o.param.pz)
+  # log1Pz = np.log(1 - o.param.pz)
+  # logPd = np.log(o.param.pd)
+  # log1Pd = np.log(1 - o.param.pd)
+  # logLambda_b = np.log(o.param.lambda_b)
+  # logLambda_f = np.log(o.param.lambda_f)
+  # for t in y.ts:
+  #   if t-1 in e_t1: et = e_t1[t-1]
+  #   else: et = 0
+  #   ct = et - z_t[t]
+  #   ut = ct + a_t[t] - d_t[t]
+  #
+  #   # # test: remove counts
+  #   ll += z_t[t] * logPz + ct * log1Pz
+  #   ll += d_t[t] * logPd + ut * log1Pd
+  #   ll += a_t[t] * logLambda_b
+  #   ll += f_t[t] * logLambda_f
+  #
+  # # Annotations, if any. 
+  # #   Note: don't need to explicitly add
+  # #     ll += consistent * log(1 - p_a)
+  # #   because log(1 - p_a) ~= 0 since we assume p_a = 1 - eps
+  # A = kwargs.get('A_pairwise', None)
+  # if A is None: return ll
+  # consistent, inconsistent = A.consistencyCounts(z)
+  # ll += inconsistent * o.param.log_pa
 
   return ll
 
@@ -378,15 +343,18 @@ def log_joint(o, y, w, z):
 #   force all to have same inputs
 #   lambda fcn to pass through relevant inputs
 #   sample-specific logic for each move                 <---
-def sample(o, y, w, z, ll):
+def sample(o, y, w, z, ll, **kwargs):
+  A_pairwise = kwargs.get('A_pairwise', None)
+
   info = dict(valid=False, accept=False, move=None, logA=None, logq=None,
     ll_prop=None, ll_old=None)
 
   # sample move
   info['move'] = np.random.choice(o.param.moveNames, p=o.param.moveProbs)
+  logq = 0.0
 
-  if info['move'] in ['switch', 'update']: doAcceptTest = False
-  # if info['move'] in ['update',]: doAcceptTest = False
+  # if info['move'] in ['switch', 'update']: doAcceptTest = False
+  if info['move'] in ['update',]: doAcceptTest = False
   else: doAcceptTest = True
 
   # print(f"Trying {info['move']}")
@@ -412,11 +380,14 @@ def sample(o, y, w, z, ll):
   else: info['valid'] = True
 
   # Acceptance test and record info
-  ll_new = log_joint(o, y, w_, z_)
-  logA = ll_new - ll
+  ll_new = log_joint(o, y, w_, z_, A_pairwise=A_pairwise)
+  logA = ll_new - ll + logq
   info.update(logA=logA, ll_prop=ll_new, ll_old=ll, logq=logq)
   if not doAcceptTest or logA > 0 or np.random.rand() <= np.exp(logA):
     info['accept'] = True
     return w_, z_, info
   else:
+    # if info['move'] == 'switch':
+    #   print(f'Rejected Switch: ll_prop: {ll_new:.2f}, ll_old: {ll:.2f}, logq: {logq:.2f}, logA: {logA:.2f}')
+
     return w, z, info

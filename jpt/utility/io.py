@@ -125,7 +125,8 @@ __fromBytesObjects = {
   'ImageObservationSet': jpt.ImageObservationSet,
   'MaskObservationSet': jpt.MaskObservationSet,
   'UniqueBijectiveAssociation': jpt.UniqueBijectiveAssociation,
-  'AnyTracks': jpt.AnyTracks
+  'AnyTracks': jpt.AnyTracks,
+  'PairwiseAnnotations': jpt.PairwiseAnnotations
 }
 
 def save(fname, D):

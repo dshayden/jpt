@@ -103,7 +103,6 @@ class UniqueBijectiveAssociation(Association, jpt.Serializable):
   def __check_consistency(self):
     for t in self._z.keys():
       ztPos = self._z[t][ self._z[t] != 0 ]
-      # if len(self._z[t]) != len(np.unique(self._z[t])):
       if len(ztPos) != len(np.unique(ztPos)):
         warn(f'Non-unique, non-0 values in self._z[{t}]: \n{self._z[t]}')
         ip.embed()
@@ -155,3 +154,49 @@ class UniqueBijectiveAssociation(Association, jpt.Serializable):
     """ Return next valid index of a new unique label. """
     if len(self.ks) == 0: return int(1)
     else: return max(self.ks) + 1
+
+# want fast look-ups of t1, i1, t2, i2 : same/diff
+# want convenient consistency / inconsistency counts
+
+class PairwiseAnnotations(jpt.Serializable):
+  """ dict N {t: n_t }, list A [ (t1, i1, t2, i2, 1), ... ]. """
+
+  def __init__(self, N, A):
+    self.N = N
+    self.A = A
+    self.__check_consistency()
+
+  def consistencyCounts(self, z):
+    assert type(z) == UniqueBijectiveAssociation
+
+    consistent = inconsistent = 0
+    for (t1, i1, t2, i2, val) in self.A:
+      nonzeroAndEqual = z[t1][i1] == z[t2][i2] and z[t1][i1] != 0
+      if val == 1:
+        if nonzeroAndEqual: consistent += 1
+        else: inconsistent += 1
+      else:
+        if nonzeroAndEqual: inconsistent += 1
+        else: consistent += 1
+
+    return consistent, inconsistent
+
+  def __check_consistency(self):
+    assert type(self.A) == list
+    for (t1, i1, t2, i2, val) in self.A:
+      assert t1 in self.N.keys() and t2 in self.N.keys()
+      assert 0 <= i1 and i1 < self.N[t1]
+      assert 0 <= i2 and i2 < self.N[t2]
+      assert val == 1 or val == 0
+      assert t1 != t2
+
+  def serializable(self):
+    # return dict with appropriate keys for serialization that does't depend on
+    # anything more than basic or numpy types
+    return { self._magicKey: [self.N, self.A], 
+      self._classKey: 'PairwiseAnnotations'
+    }
+
+  def fromSerializable(N, A):
+    # return PairwiseAnnotation loaded from args pulled from serialized data
+    return PairwiseAnnotations(N, A)

@@ -1,0 +1,32 @@
+#!/usr/bin/env python
+
+import argparse, du, matplotlib.pyplot as plt
+import IPython as ip
+import numpy as np
+import json
+import jpt
+import os
+
+def main(args):
+  y = jpt.io.mot15_bbox_to_obs(args.ifile, isPoints=True)
+  D = jpt.io.load(args.sample)
+  w, ll = ( D['w'], D['ll'] )
+
+  jpt.viz.plot_points2d_global(y)
+  jpt.viz.plot_tracks2d_global(w)
+
+  title = du.fileparts(args.sample)[1]
+  plt.title(f'{title}, Log Joint: {ll:.2f}')
+  if args.outfile: plt.savefig(f'{args.outfile}', dpi=300, bbox_inches='tight')
+  else: plt.show()
+
+if __name__ == "__main__":
+  parser = argparse.ArgumentParser(description='')
+  parser.add_argument('ifile', type=str, help='MOT 2015 detections file')
+  parser.add_argument('sample', type=str, help='JPT sample')
+  parser.add_argument('--outfile', type=str,
+    help='output file path with pdf or png extension')
+  parser.set_defaults(func=main)
+
+  args = parser.parse_args()
+  args.func(args)

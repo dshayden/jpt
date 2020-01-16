@@ -1,9 +1,8 @@
 #!/usr/bin/env python
+import argparse, numpy as np, jpt, sys, du
+import IPython as ip
 
-import argparse, du, numpy as np, jpt, sys
-
-def work(sampleX, sampleZ):
-  DX = jpt.io.load(sampleX)
+def work(DX, sampleZ):
   DZ = jpt.io.load(sampleZ)
 
   w, y, o = ( DX['w'], DX['y'], DX['o'] )
@@ -35,14 +34,19 @@ def work(sampleX, sampleZ):
   return ll
 
 def main(args):
-  ll = work(args.sampleX, args.sampleZ)
-  print(ll)
-  if np.isclose(ll, 0.0): sys.exit(-1) # exit with failure
+  DX = jpt.io.load(args.sampleX)
+  pArgs = [ (DX, sz) for sz in args.samplesZ ]
+  lls = du.Parfor(work, pArgs, showProgress=False)
+  for ll in lls: print(ll)
+
+  # ll = work(args.sampleX, args.sampleZ)
+  # if np.isclose(ll, 0.0): sys.exit(-1) # exit with failure
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='')
   parser.add_argument('sampleX', type=str, help='Sample to use X values from')
-  parser.add_argument('sampleZ', type=str, help='Sample to use Z values from')
+  parser.add_argument('samplesZ', type=str, nargs='+',
+		help='Filepaths of samples to use Z values from.')
   parser.set_defaults(func=main)
 
   args = parser.parse_args()

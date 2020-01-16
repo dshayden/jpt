@@ -1,0 +1,79 @@
+#!/usr/bin/env python
+
+import argparse, du
+import IPython as ip
+import numpy as np
+import json
+import jpt
+import os
+
+def saveSample(filename, o, z, w, ll, A_pairwise):
+  saveDct = { 'o': o, 'z': z, 'w': w, 'll': ll, 'A_pairwise': A_pairwise }
+  if A_pairwise is None: del saveDct['A_pairwise']
+  jpt.io.save(filename, saveDct)
+
+def main(args):
+  # Make output directory if it isn't made
+  try: os.makedirs(args.outdir)
+  except: pass
+
+  # Initialize
+  tracker = jpt.PointTracker
+  dy, dx = (2, 4)
+  y = jpt.io.mot15_bbox_to_obs(args.ifile, isPoints=True)
+
+  # Load from specified initial sample or create a default
+  if args.init_sample:
+    D = jpt.io.load(args.init_sample)
+    o, w, z = ( D['o'], D['w'], D['z'] )
+  else:
+    kwargs = tracker.data_dependent_priors(y)
+    kwargs['maxK'] = args.maxK
+    o = tracker.opts(args.ifile, dy, dx, **kwargs)
+    w, z = tracker.init_assoc_noise(y)
+
+  # Load annotations, if any
+  if not args.a_pairwise: A_pairwise = None
+  else:
+    with open(args.a_pairwise, 'r') as fid:
+      loaded_json = json.loads(fid.read())
+      A_pairwise = jpt.PairwiseAnnotations(y.N, loaded_json)
+
+  # Prepare for sampling and save initial sample
+  nS = 0
+  ll = tracker.log_joint(o, y, w, z)
+  lls = np.zeros(args.nSamples)
+  lls[nS] = ll
+  K = len(w.ks)
+  print(f"Sample {nS:05}, move: init +, K = {K:02}, ll: {ll:.2f}")
+  saveSample(f'{args.outdir}/sample-{nS:05}', o, z, w, ll, A_pairwise)
+
+  accept = 0
+  for nS in range(1,args.nSamples):
+    w, z, info = tracker.sample(o, y, w, z, ll, A_pairwise=A_pairwise)
+
+    K = len(w.ks)
+    if info['accept'] == True:
+      ll = info['ll_prop']
+      accept += 1
+      print(f"Sample {nS:05}, move: {info['move']} +, K = {K:02}, ll: {ll:.2f}")
+    else:
+      print(f"Sample {nS:05}, move: {info['move']} -, K = {K:02}, ll: {ll:.2f}")
+      
+    saveSample(f'{args.outdir}/sample-{nS:05}', o, z, w, ll, A_pairwise)
+
+if __name__ == "__main__":
+  parser = argparse.ArgumentParser(description='')
+  parser.add_argument('ifile', type=str, help='MOT 2015 detections file')
+  parser.add_argument('outdir', type=str, help='Output directory for samples')
+  parser.add_argument('nSamples', type=int, help='Number of samples to draw')
+  parser.add_argument('--a_pairwise', type=str, default='',
+    help='Pairwise annotations JSON')
+  parser.add_argument('--init_sample', type=str, default='',
+    help='Saved JPT sample to initialize from')
+  parser.add_argument('--maxK', type=int, default=-1,
+    help='Maximum number of targets; specify only if limited')
+  parser.set_defaults(func=main)
+
+  args = parser.parse_args()
+  args.func(args)

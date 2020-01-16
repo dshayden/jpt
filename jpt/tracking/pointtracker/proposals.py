@@ -8,6 +8,7 @@ import IPython as ip
 def extend(o, y, w, z):
   # check that we have tracks to disperse
   if not z.ks: return w, z, False, 0.0
+
   z0 = z.to(0)
 
   # randomly sample an existing track
@@ -369,6 +370,8 @@ def switch(o, y, w, z):
 
   def costxx(t1, x1, t2, x2, k):
     # todo: handle separated t1, t2
+    # (t1, x1) is AFTER (t2, x2)
+    assert t1 > t2
     return -0.5 * mahalanobis(x1, np.dot(o.param.F, x2), Qi[k])
 
   def costxy(t, k, xtk, ytk):
@@ -378,7 +381,9 @@ def switch(o, y, w, z):
   def val(t,k):
     if t in w.x[k][1]:
       jtk = z.to(k)[t]
-      xtk, ytk = ( w.x[k][1][t], y[t][jtk] )
+      xk = w.x[k][1]
+      xtk, ytk = ( xk[t], y[t][jtk] )
+      # xtk, ytk = ( w.x[k][1][t], y[t][jtk] )
     else:
       # todo: handle reverse direction
       dct = w.x[k][1].copy()
@@ -390,7 +395,11 @@ def switch(o, y, w, z):
 
   # make hmm, sample
   perms, pi, Psi, psi = jpt.hmm.build(t0, x0, ts, ks, val, costxx, costxy)
-  S = jpt.hmm.ffbs(pi, Psi, psi)
+
+  # S, q_new_given_old, q_old_given_new = jpt.hmm.ffbs(pi, Psi, psi)
+  S, q_new_given_old, q_old_given_new = jpt.hmm.sample(pi, Psi, psi)
+  print(S)
+  print(f'q_old_given_new: {q_old_given_new:.2f}, q_new_given_old: {q_new_given_old:.2f}')
 
   if len(w.ks) <= 4:
     None
@@ -414,7 +423,11 @@ def switch(o, y, w, z):
   z_ = z.edit(editDict_tkj, kind='tkj', inplace=False)
   w_ = w.edit(editDict_k, kind='k', inplace=False)
 
-  return w_, z_, True, 0.0
+  # experiment: edit w_ again with gibbs sample
+  w_, _, _, _ = update(o, y, w_, z_)
+  # end experiment
+
+  return w_, z_, True, q_old_given_new - q_new_given_old
 
 def split(o, y, w, z):
   """ Sample a random split proposal for UniqueBijectiveAssociation, z. """
