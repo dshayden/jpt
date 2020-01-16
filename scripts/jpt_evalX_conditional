@@ -39,10 +39,10 @@ def main(args):
   DX = jpt.io.load(args.sampleX)
   pArgs = [ (DX, sz) for sz in args.samplesZ ]
   lls = du.Parfor(work, pArgs, showProgress=False)
-  for ll in lls: print(ll)
 
-  # ll = work(args.sampleX, args.sampleZ)
-  # if np.isclose(ll, 0.0): sys.exit(-1) # exit with failure
+  nLL = len(lls)
+  for i in range(nLL-1): print(lls[i])
+  print(lls[nLL-1], end='')
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='')
