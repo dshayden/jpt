@@ -1,0 +1,64 @@
+#!/usr/bin/env python
+import matplotlib
+matplotlib.use("Agg")
+import argparse, numpy as np, jpt, sys, du
+from scipy.stats import multivariate_normal as mvn
+from scipy.special import logsumexp
+import IPython as ip
+
+def work(DX, sampleZ):
+  DZ = jpt.io.load(sampleZ)
+
+  w, y, o = ( DX['w'], DX['y'], DX['o'] )
+  z = DZ['z']
+
+  if set(w.ks) != set(z.ks):
+    print('Inconsistent track identifiers in sampleX and sampleZ',
+      file=sys.stderr)
+    return ll
+  
+
+  # x = [ w.x[k][1] for k in w.ks ]
+  H=o.param.H
+
+  ll = 0.0
+  for t in z.ts:
+    # p(z | x, y) = \prod_t p(z_t | x_t, y_t)
+    #             = \prod_t \prod_n p(z_{tn} | x_t, y_t, z_{1:n-1})
+    #             = \prod_t \prod_n p(z_{tn} | x_t, y_{tn}, z_{1:n-1})
+    # p(z_{tn} | x_t, y_{tn}, z_{1:n-1}) \propto {
+    #   N( y_{tn} | \mu_k, E_k ) : z_{tn} = k and z_{t n'} = k => n' = n, for
+    #                                             for any n' \in [1, n-1]
+    # }
+    availableK = np.array([ k for k in z.ks ], dtype=np.int)
+    for n in range(y.N[t]):
+      logp_ztn = np.zeros(len(availableK))
+      for idx, k in enumerate(availableK):
+        logp_ztn[idx] = mvn.logpdf(y[t][n], H @ w.x[k][1][t], w.x[k][0]['R'])
+      logp_ztn -= logsumexp(logp_ztn)
+
+      # take the entry of logp_ztn that corresponds to K = z[t][n]
+      ind = np.where(availableK == z[t][n])[0]
+      ll += logp_ztn[ ind ]
+      availableK = np.setdiff1d(availableK, [z[t][n],])
+
+  return ll
+
+def main(args):
+  DX = jpt.io.load(args.sampleX)
+  pArgs = [ (DX, sz) for sz in args.samplesZ ]
+  lls = du.Parfor(work, pArgs, showProgress=False)
+
+  nLL = len(lls)
+  for i in range(nLL-1): print(lls[i])
+  print(lls[nLL-1], end='')
+
+if __name__ == "__main__":
+  parser = argparse.ArgumentParser(description='')
+  parser.add_argument('sampleX', type=str, help='Sample to use X values from')
+  parser.add_argument('samplesZ', type=str, nargs='+',
+    help='Filepaths of samples to use Z values from.')
+  parser.set_defaults(func=main)
+
+  args = parser.parse_args()
+  args.func(args)
