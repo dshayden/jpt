@@ -29,6 +29,7 @@ setup(
     scripts=[
       'scripts/jpt_runPointTracker',
       'scripts/jpt_evalX_conditional',
+      'scripts/jpt_evalZ_conditional',
       'scripts/jpt_samples2matlab'
     ],
     install_requires=install_reqs,
