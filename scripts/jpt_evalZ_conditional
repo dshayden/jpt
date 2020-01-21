@@ -17,7 +17,6 @@ def work(DX, sampleZ):
       file=sys.stderr)
     return ll
   
-
   # x = [ w.x[k][1] for k in w.ks ]
   H=o.param.H
 
@@ -42,7 +41,7 @@ def work(DX, sampleZ):
       ll += logp_ztn[ ind ]
       availableK = np.setdiff1d(availableK, [z[t][n],])
 
-  return ll
+  return ll[0]
 
 def main(args):
   DX = jpt.io.load(args.sampleX)
