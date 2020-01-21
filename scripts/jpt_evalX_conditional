@@ -21,7 +21,8 @@ def work(DX, sampleZ):
     zk = z.to(k)
     ts_k = zk.keys()
 
-    xk = dict([ (t, w.x[k][1][t]) for t in ts_k])
+    # xk = dict([ (t, w.x[k][1][t]) for t in ts_k])
+    xk = dict([ (t, None) for t in ts_k])
     yk = dict([(t, y[t][zk[t]]) for t in ts_k])
     x0 = ( o.prior.mu0, o.prior.Sigma0 )
     theta = w.x[k][0]

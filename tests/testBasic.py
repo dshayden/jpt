@@ -29,11 +29,11 @@ def testSwitchReverse():
 
   ll = tracker.log_joint(o, y, w, z)
 
-  plt.figure()
-  jpt.viz.plot_points2d_global(y)
-  jpt.viz.plot_tracks2d_global(w)
-  plt.title(f'Initial')
-  plt.show()
+  # plt.figure()
+  # jpt.viz.plot_points2d_global(y)
+  # jpt.viz.plot_tracks2d_global(w)
+  # plt.title(f'Initial')
+  # plt.show()
   # sys.exit()
 
 
@@ -41,7 +41,7 @@ def testSwitchReverse():
   o.param.moveNames = ['switch', 'extend', 'gather', 'update']
   o.param.moveProbs = np.array([0.3, 0.1, 0.1, 0.5])
 
-  nSamples = 500
+  nSamples = 2000
   accept = 0
   lls = np.zeros(nSamples)
   lls[0] = ll
@@ -60,6 +60,12 @@ def testSwitchReverse():
       print(nS, info['move'], lls[nS])
     else:
       lls[nS] = lls[nS-1]
+
+    # if w.ks == 
+    savePath = 'tmp/k32_switch'
+    if len(w.ks) == o.param.maxK and nS > nSamples/2:
+      jpt.io.save(f'{savePath}/sample-{nS:05}',
+        {'z': z, 'w': w, 'y': y, 'o': o, 'll': lls[nS]})
 
     # print(info)
 
@@ -80,6 +86,10 @@ def testSwitchReverse():
   jpt.viz.plot_points2d_global(y)
   jpt.viz.plot_tracks2d_global(w)
   plt.title(f'Final')
+
+  plt.figure()
+  plt.plot(lls)
+
   plt.show()
 
   # assert len(z.to(0).keys()) == 0

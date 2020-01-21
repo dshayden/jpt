@@ -40,14 +40,17 @@ def main(args):
       s = cnts[idx, n]
       if np.sum(s) == 0: continue
       s = s / np.sum(s)
-      ctr = np.array([t, n])
-      # ctr = y[t][n]
+      # ctr = np.array([t, n])
+      ctr = y[t][n]
       plt.pie(s, colors=colors, center=ctr, radius=0.25)
   # plt.xticks(y.ts)
   plt.xticks([]);
-  plt.xticks(range(min(y.ts), max(y.ts)+100, 100), fontsize=4, rotation=90)
+  # plt.xticks(range(min(y.ts), max(y.ts)+100, 100), fontsize=4, rotation=90)
+  # plt.xticks(np.linspace(min(y.ts), max(y.ts), len(y.ts)), fontsize=4, rotation=90)
+  plt.gca().tick_params(axis=u'both', which=u'both',length=0)
 
-  plt.xlabel('Time')
+
+  # plt.xlabel('Time')
   plt.yticks([]);
 
   # for t in y.ts:
@@ -57,9 +60,8 @@ def main(args):
   # plt.xlim(-1, 51)
   # plt.ylim(-1, 13)
 
-  plt.xlim(-1, len(y.ts)+1)
-  plt.ylim(min(ks)-1, max(ks)+1)
-  # plt.scatter([0, len(y.ts)], [0, 2], s=0.01)
+  plt.xlim(0, len(y.ts))
+  plt.ylim(min(ks)-1, max(ks)-1)
   plt.gca().set_aspect('equal')
 
   plt.savefig('test.pdf', bbox_inches='tight')

@@ -18,7 +18,8 @@ def extend(o, y, w, z):
   if len(zk.keys()) == 1 or len(z0.keys()) == 0: return w, z, False, 0.0
 
   # randomly sample a direction
-  d = np.random.choice([-1, 1])
+  # d = np.random.choice([-1, 1])
+  d = 1 # don't allow backwards extend for the moment
 
   # arrange times in ascending (d=1) or descending (d=-1) order, starting from
   # first (d=1) or last (d=-1) track association time
@@ -660,60 +661,10 @@ def possible_splits(z):
   return splits
 
 def track_swap_begin_times(o, z):
-  # new: record 1 + time of first assocation in each track
-  # old: record 1 + time of second assocation in each track
+  # record 1 + time of first assocation in each track
   times = [ None for k in range(len(z.ks)) ]
   for idx, k in enumerate(z.ks):
     zkt = list(z.to(k).keys())
     assert len(zkt) >= 2, 'Track lengths must be >= 2'
-    # if zkt[1] != z.tE: times[idx] = (k, 1+zkt[1])
     if zkt[0] != z.tE: times[idx] = (k, 1+zkt[0])
   return times
-
-
-# def possible_switch_windows(o, z, reverse=False):
-#   """ Get possible switch windows for two targets.
-#
-#   Return is of the form [ (ks, t0, tsInside), ... ] for
-#     targets k in ks
-#     most recent per-target times t0 *outside* swap (corresponds to order of ks)
-#     swap window times tsInside
-#   """
-#   windows = [ ]
-#   for k1 in z.ks:
-#     t1 = list(z.to(k1).keys())
-#     if len(t1) < 2: continue
-#
-#     for k2 in z.ks:
-#       if k1 == k2: continue
-#       t2 = list(z.to(k2).keys())
-#       if len(t2) < 2: continue
-#
-#       ts = np.sort(np.unique(t1 + t2))
-#       if reverse: ts = ts[::-1]
-#
-#       # find smallest/largest time t which, "before" t, both have >= one obs
-#       for t_ in ts:
-#         if reverse:
-#           t1_before = [ t for t in t1 if t <= t_ ]
-#           t2_before = [ t for t in t2 if t <= t_ ]
-#           t1_after = [ t for t in t1 if t > t_ ]
-#           t2_after = [ t for t in t2 if t > t_ ]
-#           if len(t1_after) == 0 or len(t2_after) == 0: continue
-#           if len(t1_before) == 0 and len(t2_before) == 0: continue
-#           t0 = None # TODO: implement
-#
-#         else:
-#           t1_before = [ t for t in t1 if t < t_ ]
-#           t2_before = [ t for t in t2 if t < t_ ]
-#           t1_after = [ t for t in t1 if t >= t_ ]
-#           t2_after = [ t for t in t2 if t >= t_ ]
-#           if len(t1_before) == 0 or len(t2_before) == 0: continue
-#           if len(t1_after) == 0 and len(t2_after) == 0: continue
-#           t0 = np.array([max(t1_before), max(t2_before)])
-#           tsInside = [ t for t in ts if t >= t_ ]
-#         
-#         windows.append( ( (k1, k2), t0, tsInside) )
-#         # windows.append( (k1, k2, t_) )
-#         return windows
-#   return []
