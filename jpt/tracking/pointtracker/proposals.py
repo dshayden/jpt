@@ -469,7 +469,6 @@ def switch(o, y, w, z):
         xEdits[i][t] = xtk_
 
       else:
-        print('NOT SUPPOSED TO BE HERE')
         mu[i], Sigma[i], lastT[i] = ( mu_t[i], Sigma_t[i], t )
 
         # if there was an association to x[i][t], remove it

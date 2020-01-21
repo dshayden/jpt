@@ -7,8 +7,8 @@ import json
 import jpt
 import os
 
-def saveSample(filename, o, z, w, ll, A_pairwise):
-  saveDct = { 'o': o, 'z': z, 'w': w, 'll': ll, 'A_pairwise': A_pairwise }
+def saveSample(filename, o, z, w, y, ll, A_pairwise):
+  saveDct = { 'o': o, 'z': z, 'w': w, 'y': y, 'll': ll, 'A_pairwise': A_pairwise }
   if A_pairwise is None: del saveDct['A_pairwise']
   jpt.io.save(filename, saveDct)
 
@@ -30,7 +30,11 @@ def main(args):
     kwargs = tracker.data_dependent_priors(y)
     kwargs['maxK'] = args.maxK
     o = tracker.opts(args.ifile, dy, dx, **kwargs)
-    w, z = tracker.init_assoc_noise(y)
+    # w, z = tracker.init_assoc_noise(y)
+
+    okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H)
+    param = dict(Q=okf.Q, R=okf.R, mu0=o.prior.mu0)
+    w, z = tracker.init_assoc_greedy_dumb(y, param, maxK=args.maxK)
 
   # Load annotations, if any
   if not args.a_pairwise: A_pairwise = None
@@ -46,7 +50,7 @@ def main(args):
   lls[nS] = ll
   K = len(w.ks)
   print(f"Sample {nS:05}, move: init +, K = {K:02}, ll: {ll:.2f}")
-  saveSample(f'{args.outdir}/sample-{nS:05}', o, z, w, ll, A_pairwise)
+  saveSample(f'{args.outdir}/sample-{nS:05}', o, z, w, y, ll, A_pairwise)
 
   accept = 0
   for nS in range(1,args.nSamples):
@@ -60,7 +64,7 @@ def main(args):
     else:
       print(f"Sample {nS:05}, move: {info['move']} -, K = {K:02}, ll: {ll:.2f}")
       
-    saveSample(f'{args.outdir}/sample-{nS:05}', o, z, w, ll, A_pairwise)
+    saveSample(f'{args.outdir}/sample-{nS:05}', o, z, w, y, ll, A_pairwise)
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='')

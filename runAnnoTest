@@ -1,0 +1,22 @@
+#!/bin/sh
+
+dataset=data/datasets/k22
+nSamples=1000
+K=2
+
+# first round, no annotations
+echo "First round, no annotations"
+sampleDir=tmp/jpt_anno_test001/rnd00
+scripts/jpt_run2dPointTracker $dataset/dets.csv $sampleDir $nSamples --maxK $K
+scripts/jpt_drawDist_toy $sampleDir $sampleDir/dist.pdf
+
+echo "Second round, 1 annotation"
+sampleDir=tmp/jpt_anno_test001/rnd01
+scripts/jpt_run2dPointTracker $dataset/dets.csv $sampleDir $nSamples --maxK $K --a_pairwise $dataset/anno01.json
+scripts/jpt_drawDist_toy $sampleDir $sampleDir/dist.pdf
+
+# third round, two annotations
+echo "Third round, 2 annotation"
+sampleDir=tmp/jpt_anno_test001/rnd02
+scripts/jpt_run2dPointTracker $dataset/dets.csv $sampleDir $nSamples --maxK $K --a_pairwise $dataset/anno02.json
+scripts/jpt_drawDist_toy $sampleDir $sampleDir/dist.pdf

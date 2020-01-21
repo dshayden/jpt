@@ -1,6 +1,7 @@
+#!/usr/bin/env python
+
 import argparse, du
 import matplotlib.pyplot as plt
-import IPython as ip
 import numpy as np
 import jpt
 
@@ -18,21 +19,34 @@ def main(args):
 
   # get all unique target identifiers k
   # ks = np.unique( [ z_[s].ks for s in range(len(z_)) ] )
-  ks = np.unique(np.concatenate(( [ z_[s].ks for s in range(len(z_)) ] )))
+  ks = np.unique(np.concatenate(( [ z_[s].ks for s in range(len(z_)) ] ))).astype(np.int)
 
   nTargets = len(ks)
   colors = du.diffcolors(nTargets)
-
   nObs = max(y.N.values())
-
   cnts = np.zeros((len(y.ts), nObs, nTargets))
   for idx, t in enumerate(y.ts):
     for z in z_:
+      
+      # identify tracks by ordering based on observations
+      kMap = {}
+      kInd = 0
+      for t_ in z.ts:
+        for j, k in enumerate(z[t_]):
+          if k not in kMap: kMap[k] = kInd; kInd += 1
+        if len( np.setdiff1d(z.ks, kMap.keys()) ) == 0: break
+      # print(kMap)
+
       for k in ks:
         if k not in z.ks: continue
         if t in z.to(k):
           j = z.to(k)[t]
-          cnts[idx, j, k-1] += 1
+          cnts[idx, j, kMap[k]] += 1
+          # cnts[idx, j, k-1] += 1
+
+  # import IPython as ip, sys
+  # ip.embed()
+  # sys.exit()
 
   for idx, t in enumerate(y.ts):
     for n in range(nObs):
@@ -64,19 +78,15 @@ def main(args):
   plt.ylim(min(ks)-1, max(ks)-1)
   plt.gca().set_aspect('equal')
 
-  plt.savefig('test.pdf', bbox_inches='tight')
-  # plt.show()
-
-
+  plt.savefig(args.outfile, bbox_inches='tight')
 
   # plot observations and pie charts
   # ip.embed() 
 
-
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='')
   parser.add_argument('sampleDir', type=str, help='directory with jpt samples')
-  # parser.add_argument('outfile', type=str, help='output mat file')
+  parser.add_argument('outfile', type=str, help='output pdf or png path')
   parser.add_argument('--t0', type=int, default=0, help='first sample index')
   parser.add_argument('--tE', type=int, default=-1, help='last sample index')
   parser.set_defaults(func=main)

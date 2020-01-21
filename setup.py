@@ -30,7 +30,9 @@ setup(
       'scripts/jpt_runPointTracker',
       'scripts/jpt_evalX_conditional',
       'scripts/jpt_evalZ_conditional',
-      'scripts/jpt_samples2matlab'
+      'scripts/jpt_samples2matlab',
+      'scripts/jpt_drawDist_toy',
+      'scripts/jpt_run2dPointTracker',
     ],
     install_requires=install_reqs,
     dependency_links=[
