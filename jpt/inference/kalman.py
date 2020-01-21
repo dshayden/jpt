@@ -196,7 +196,7 @@ def state_estimate(o, x, **kwargs):
     xsDict[t] = ( xs[i], Ps[i] )
   return xsDict
 
-def ffbs(o, x, y, x0=None, return_ll=False):
+def ffbs(o, x, y, x0=None, return_ll=False, no_resample=False):
   # x: dictionary of {t: None} for all times with desired inference
   # y: dictionary of {t: vals} for all times with at least one observation
   # x0: (mu, Sigma) tuple signifying prior dist; very broad if not specified
@@ -229,8 +229,16 @@ def ffbs(o, x, y, x0=None, return_ll=False):
   ll = 0.0
 
   xs = np.zeros((nObs, o.dx))
-  xs[-1] = mvn.rvs(xf[-1], Pf[-1])
-  ll += mvn.logpdf(xs[-1], xf[-1], Pf[-1])
+
+  if no_resample:
+    ts = [ ob[0] for ob in obs ]
+    assert all([ x[t] is not None for t in ts ])
+    xs[-1] = x[t]
+    ll += mvn.logpdf(xs[-1], xf[-1], Pf[-1])
+    assert type(ll) == np.float64
+  else:
+    xs[-1] = mvn.rvs(xf[-1], Pf[-1])
+    ll += mvn.logpdf(xs[-1], xf[-1], Pf[-1])
 
   tNext = obs[-1][0]
   for idx in reversed(range(nObs-1)):
@@ -251,8 +259,11 @@ def ffbs(o, x, y, x0=None, return_ll=False):
     #     
     #           inferNormalNormal(y,     SigmaY, muX,     SigmaX,  H=None, b=None)
     mu, Sigma = inferNormalNormal(xs[idx+1], Q_, xf[idx], Pf[idx], H=H)
-    xs[idx] = mvn.rvs(mu, Sigma)
+
+    if no_resample: xs[idx] = x[t]
+    else: xs[idx] = mvn.rvs(mu, Sigma)
     ll += mvn.logpdf(xs[idx], mu, Sigma)
+    assert type(ll) == np.float64
     tNext = t
 
   # for idx, (t, _) in enumerate(obs): x[int(t)] = xs[idx]
@@ -285,9 +296,13 @@ def ffbs(o, x, y, x0=None, return_ll=False):
 
       # pull from x, not xs, so we can just compute LL if desired
       llDenom += mvn.logpdf( x[tNext], xh, Ph ) # x_{t+1} == xs[idx+1]
+      assert type(llDenom) == np.float64
 
     # print(f'll: {ll - llDenom:.2f}, llNum: {ll:.2f}, llDen: {llDenom:.2f}')
     ll -= llDenom
+    # assert type(ll) == float
+    assert type(llDenom) == np.float64
+
 
   if not return_ll: return x
   else: return x, ll

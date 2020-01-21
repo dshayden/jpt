@@ -21,15 +21,17 @@ def work(DX, sampleZ):
     zk = z.to(k)
     ts_k = zk.keys()
 
-    # xk = dict([ (t, w.x[k][1][t]) for t in ts_k])
-    xk = dict([ (t, None) for t in ts_k])
+		# compute p( x | y, z )
+    xk = dict([ (t, w.x[k][1][t]) for t in ts_k]) # don't resample x
+    # xk = dict([ (t, None) for t in ts_k]) # do resample x
     yk = dict([(t, y[t][zk[t]]) for t in ts_k])
     x0 = ( o.prior.mu0, o.prior.Sigma0 )
     theta = w.x[k][0]
     okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H,
       Q=theta['Q'], R=theta['R'])
 
-    x_, ll_x = jpt.kalman.ffbs(okf, xk, yk, x0, return_ll=True)
+    x_, ll_x = jpt.kalman.ffbs(okf, xk, yk, x0, return_ll=True,
+			no_resample=True)
     ll += ll_x
 
   # todo: handle noise-associated observations
@@ -40,6 +42,7 @@ def main(args):
   DX = jpt.io.load(args.sampleX)
   pArgs = [ (DX, sz) for sz in args.samplesZ ]
   lls = du.Parfor(work, pArgs, showProgress=False)
+  # lls = du.For(work, pArgs, showProgress=False)
 
   nLL = len(lls)
   for i in range(nLL-1): print(lls[i])
