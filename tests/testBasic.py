@@ -6,24 +6,42 @@ import copy
 np.set_printoptions(precision=2, suppress=True)
 
 def testSwitchReverse():
+  # ifile = 'data/datasets/k32/gt.csv'
+  ifile = 'data/datasets/k32/dets.csv'
   # ifile = 'data/datasets/k22/gt.csv'
-  ifile = 'data/datasets/k22/dets.csv'
+  # ifile = 'data/datasets/k22/dets.csv'
   tracker = jpt.PointTracker
   o, y, w, z = tracker.init2d(ifile)
-  o.param.fixedK = 2
-
+  o.param.fixedK = 3
   okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H)
   param = dict(Q=okf.Q, R=okf.R, mu0=o.prior.mu0)
-  w, z = tracker.init_assoc_greedy_dumb(y, param, maxK=o.param.fixedK)
-  # w, z = tracker.init_assoc_noise(y, maxK=2)
+  # w, z = tracker.init_assoc_greedy_dumb(y, param, maxK=o.param.fixedK)
+  w, z = tracker.init_assoc_noise(y)
+
+  # o.param.fixedK = 2
+  o.param.fixedK = 3
+  o.param.maxK = 3
+
+  # okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H)
+  # param = dict(Q=okf.Q, R=okf.R, mu0=o.prior.mu0)
+  # w, z = tracker.init_assoc_greedy_dumb(y, param, maxK=o.param.fixedK)
+  ## w, z = tracker.init_assoc_noise(y, maxK=2)
 
   ll = tracker.log_joint(o, y, w, z)
 
-  # draw switch sample
-  o.param.moveNames = ['switch']
-  o.param.moveProbs = np.array([1.0])
+  plt.figure()
+  jpt.viz.plot_points2d_global(y)
+  jpt.viz.plot_tracks2d_global(w)
+  plt.title(f'Initial')
+  plt.show()
+  # sys.exit()
 
-  nSamples = 100
+
+  # draw switch sample
+  o.param.moveNames = ['switch', 'extend', 'gather', 'update']
+  o.param.moveProbs = np.array([0.3, 0.1, 0.1, 0.5])
+
+  nSamples = 500
   accept = 0
   lls = np.zeros(nSamples)
   lls[0] = ll
@@ -36,11 +54,35 @@ def testSwitchReverse():
     if info['accept'] == True: lls[nS] = info['ll_prop']
     else: lls[nS] = lls[nS-1]
 
-    logA = info['logA']
-    print(f"logA: {logA:.2f}, ll: {lls[nS]:.2f}")
+    if info['accept'] == True:
+      lls[nS] = info['ll_prop']
+      accept += 1
+      print(nS, info['move'], lls[nS])
+    else:
+      lls[nS] = lls[nS-1]
+
     # print(info)
 
-  assert len(z.to(0).keys()) == 0
+    # logA = info['logA']
+    # print(f"logA: {logA:.2f}, ll: {lls[nS]:.2f}")
+    # # print(info)
+
+    # if nS % 1 == 0:
+    #   plt.figure()
+    #   jpt.viz.plot_points2d_global(y)
+    #   jpt.viz.plot_tracks2d_global(w)
+    #   plt.title(f'Sample {nS}')
+    #   print(z.to(0))
+    #   # for k in w.ks: print(w.x[k][1])
+    #   plt.show()
+
+  plt.figure()
+  jpt.viz.plot_points2d_global(y)
+  jpt.viz.plot_tracks2d_global(w)
+  plt.title(f'Final')
+  plt.show()
+
+  # assert len(z.to(0).keys()) == 0
 
     # if info['accept'] == True:
     #   lls[nS] = info['ll_prop']

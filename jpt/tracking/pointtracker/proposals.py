@@ -2,7 +2,8 @@ import jpt
 from scipy.spatial.distance import mahalanobis, cdist
 from scipy.special import logsumexp
 from scipy.stats import poisson
-import numpy as np
+import numpy as np, itertools
+import copy
 import IPython as ip
 
 def extend(o, y, w, z):
@@ -355,79 +356,217 @@ def update(o, y, w, z):
   return w_, z, True, 0.0
 
 def switch(o, y, w, z):
-  windows = possible_switch_windows(o, z, reverse=False)
-  if len(windows) == 0: return w, z, False, 0.0
-  switchIdx = np.random.choice(len(windows))
-  ks, t0, ts = windows[switchIdx]
-  x0 = []
-  for idx, k in enumerate(ks): x0.append( w.x[k][1][t0[idx]] )
+  # Sample from swappable tracks
+  times = track_swap_begin_times(o, z)
+  valid = [kt for kt in times if kt is not None]
+  # K = 2 # todo: sample
+  K = min(7, len(z.ks))
 
-  Qi = dict([(k, np.linalg.inv( w.x[k][0]['Q'])) for k in ks])
-  Ri = dict([(k, np.linalg.inv( w.x[k][0]['R'])) for k in ks])
-  kf = dict([(k, jpt.kalman.opts(o.param.dy, o.param.dx,
-    F=o.param.F, H=o.param.H, Q=w.x[k][0]['Q'], R=w.x[k][0]['R'] ))
-    for k in ks])
+  nValid = len(valid)
+  if nValid < K or K < 2: return w, z, False, 0.0
 
-  def costxx(t1, x1, t2, x2, k):
-    # todo: handle separated t1, t2
-    # (t1, x1) is AFTER (t2, x2)
-    assert t1 > t2
-    return -0.5 * mahalanobis(x1, np.dot(o.param.F, x2), Qi[k])
+  choiceIdx = sorted(np.random.choice(range(nValid), size=K, replace=False))
+  choice = [ valid[i] for i in choiceIdx ]
 
-  def costxy(t, k, xtk, ytk):
-    # costxy is also where annotations get handled
-    return -0.5 * mahalanobis(ytk, np.dot(o.param.H, xtk), Ri[k])
+  # theta, x are len(ks) tuples of dictionaries in order of ks
+  try:
+    ks, t0 = zip(*choice)
+  except:
+    print('ks, t0 problem')
+    ip.embed()
+    sys.exi()
 
-  def val(t,k):
-    if t in w.x[k][1]:
-      jtk = z.to(k)[t]
-      xk = w.x[k][1]
-      xtk, ytk = ( xk[t], y[t][jtk] )
-      # xtk, ytk = ( w.x[k][1][t], y[t][jtk] )
+  theta, x = zip(*[w.x[k] for k in ks])
+  x = copy.deepcopy(x) # deep copy w.x so we can modify it
+
+  Ri = [ np.linalg.inv(thet['R']) for thet in theta ]
+  okf = [ jpt.kalman.opts(o.param.dy, o.param.dx, Q=theta[i]['Q'], R=theta[i]['R'],
+    F=o.param.F, H=o.param.H) for i in range(K) ]
+  P0 = [ np.zeros((o.dx, o.dx)) for o in okf ]
+
+  # unique times in the switch window
+  max_t0 = max(t0)
+  ts = list({ t for k in ks for t in z.to(k).keys() if t >= max_t0 })
+
+  # construct mu, Sigma for each k in ks, up to max_t0-1; these will be
+  # propagated throughout the switch
+  mu = [ [] for k in ks ]
+  Sigma = [ [] for k in ks ]
+  for i, k in enumerate(ks):
+    lastT_outside_swap = max([ t for t in z.to(k).keys() if t <= max_t0-1])
+    if lastT_outside_swap == max_t0-1:
+      mu[i] = x[i][lastT_outside_swap]
+      Sigma[i] = np.zeros((okf[i].dx, okf[i].dx))
     else:
-      # todo: handle reverse direction
-      dct = w.x[k][1].copy()
-      dct[t] = None
-      muX, SigmaX = jpt.kalman.state_estimate(kf[k], dct)[t]
-      muY, SigmaY = jpt.kalman.StateToObs(kf[k], muX, SigmaX)
-      xtk, ytk, jtk = (muX, muY, None)
-    return xtk, ytk, jtk
+      # not tested yet
+      xsDict = { lastT_outside_swap: x[i][lastT_outside_swap], max_t0-1: None }
+      mu[i], Sigma[i] = jpt.kalman.state_estimate(okf[i], xsDict)[max_t0-1]
+  lastT = [ max_t0-1 for k in ks ]
 
-  # make hmm, sample
-  perms, pi, Psi, psi = jpt.hmm.build(t0, x0, ts, ks, val, costxx, costxy)
+  # iterate through time, propagating mu, Sigma, lastT for each switch time
+  perms = list(itertools.permutations(range(len(ks))))
+  nPerms = len(perms)
 
-  # S, q_new_given_old, q_old_given_new = jpt.hmm.ffbs(pi, Psi, psi)
-  S, q_new_given_old, q_old_given_new = jpt.hmm.sample(pi, Psi, psi)
-  print(S)
-  print(f'q_old_given_new: {q_old_given_new:.2f}, q_new_given_old: {q_new_given_old:.2f}')
-
-  if len(w.ks) <= 4:
-    None
-    ## dsh: re-enable
-    # print('inside switch')
-    # ip.embed()
-
-  # edit w, z
-  ## S indexes into perms; perms is wrt ks
+  qq = 0.0
   editDict_tkj = {}
-  editDict_k = dict([(k, (w.x[k][0], {})) for k in ks])
-  for idx, t in enumerate(ts):
-    t = int(t)
-    p = perms[S[idx]]
-    for kOld_idx, kOld in enumerate(ks):
-      kNew = ks[p[kOld_idx]]
-      xtk, ytk, jtk = val(t, kNew)
-      if jtk is None: editDict_k[kOld][1][t] = None; continue
-      editDict_tkj[(t, kOld)] = jtk
-      editDict_k[kOld][1][t] = xtk
+
+  mu_t, Sigma_t = ( [ [] for k in ks ], [ [] for k in ks ] )
+  SigmaI_t = [ [] for k in ks ]
+  for t in ts:
+    logp = np.zeros(nPerms)
+
+    hasAssoc = [ t in z.to(k) for k in ks ]
+    for i, k in enumerate(ks):
+      xsDict = { lastT[i]: mu[i], t: None }
+      xsDict = jpt.kalman.state_estimate(okf[i], xsDict, P0=Sigma[i])
+      mu_t[i], Sigma_t[i] = xsDict[t]
+      SigmaI_t[i] = np.linalg.inv(Sigma_t[i])
+
+    for logp_idx, perm in enumerate(perms):
+      # mu, Sigma, lastT, mu_t, Sigma_t, SigmaI_t remain ordered, only accessed with i
+      ll = 0.0
+      for i, k in enumerate(ks):
+        # i -> i_
+        # k -> k_
+        i_ = perm[i]
+        k_ = ks[i_]
+
+        if not hasAssoc[i_]: continue
+
+        # xtk, ytk use permutation accesses
+        xtk_, ytk_ = ( x[i_][t], y[t][z.to(k_)[t]] )
+        ll += -0.5 * mahalanobis(xtk_, mu_t[i], SigmaI_t[i])
+        ll += -0.5 * mahalanobis(ytk_, okf[i].H @ xtk_, Ri[i])
+
+      logp[logp_idx] = ll
+
+    # normalize logp and sample association permutation
+    expp = np.exp(logp - logsumexp(logp))
+    permIdx = np.random.choice(range(nPerms), p=expp)
+    perm = perms[permIdx]
+
+    # print(logp)
+    # print(expp)
+
+    qq += logp[permIdx] # just a simple unnormalized logp accumulator
+
+    # propagate state forward
+    xEdits = [ {} for k in ks ]
+    for i, k in enumerate(ks):
+      # i -> i_
+      # k -> k_
+      i_ = perm[i]
+      k_ = ks[i_]
+      
+      if hasAssoc[i_]:
+        xtk_ = x[i_][t]
+        mu[i], Sigma[i], lastT[i] = ( xtk_, P0[i_].copy(), t )
+        
+        # No change to z.to(0) in editDict_tkj b/c no change in noise obs
+        j = z.to(k_)[t]
+        editDict_tkj[(t, k)] = j
+        xEdits[i][t] = xtk_
+
+      else:
+        print('NOT SUPPOSED TO BE HERE')
+        mu[i], Sigma[i], lastT[i] = ( mu_t[i], Sigma_t[i], t )
+
+        # if there was an association to x[i][t], remove it
+        if t in x[i]: xEdits[i][t] = None
+
+    for i in range(K):
+      for t in xEdits[i].keys():
+        x[i][t] = xEdits[i][t]
+
+  # edit z, w
   z_ = z.edit(editDict_tkj, kind='tkj', inplace=False)
-  w_ = w.edit(editDict_k, kind='k', inplace=False)
 
-  # experiment: edit w_ again with gibbs sample
-  w_, _, _, _ = update(o, y, w_, z_)
-  # end experiment
+  # tracks must have at least 2 associations and we want to be able to switch
+  # the second association of each track
+  for k in ks:
+    if len(z_.to(k)) < 2: return w, z, False, 0.0
 
-  return w_, z_, True, q_old_given_new - q_new_given_old
+  editDict_k = {}
+  for i, k in enumerate(ks): editDict_k[int(k)] = ( theta[i], x[i] )
+  w_ = w.edit(editDict_k)
+
+  return w_, z_, True, 0.0
+
+
+# def switch(o, y, w, z):
+#   windows = possible_switch_windows(o, z, reverse=False)
+#   if len(windows) == 0: return w, z, False, 0.0
+#   switchIdx = np.random.choice(len(windows))
+#   ks, t0, ts = windows[switchIdx]
+#   x0 = []
+#   for idx, k in enumerate(ks): x0.append( w.x[k][1][t0[idx]] )
+#
+#   Qi = dict([(k, np.linalg.inv( w.x[k][0]['Q'])) for k in ks])
+#   Ri = dict([(k, np.linalg.inv( w.x[k][0]['R'])) for k in ks])
+#   kf = dict([(k, jpt.kalman.opts(o.param.dy, o.param.dx,
+#     F=o.param.F, H=o.param.H, Q=w.x[k][0]['Q'], R=w.x[k][0]['R'] ))
+#     for k in ks])
+#
+#   def costxx(t1, x1, t2, x2, k):
+#     # todo: handle separated t1, t2
+#     # (t1, x1) is AFTER (t2, x2)
+#     assert t1 > t2
+#     return -0.5 * mahalanobis(x1, np.dot(o.param.F, x2), Qi[k])
+#
+#   def costxy(t, k, xtk, ytk):
+#     # costxy is also where annotations get handled
+#     return -0.5 * mahalanobis(ytk, np.dot(o.param.H, xtk), Ri[k])
+#
+#   def val(t,k):
+#     if t in w.x[k][1]:
+#       jtk = z.to(k)[t]
+#       xk = w.x[k][1]
+#       xtk, ytk = ( xk[t], y[t][jtk] )
+#       # xtk, ytk = ( w.x[k][1][t], y[t][jtk] )
+#     else:
+#       # todo: handle reverse direction
+#       dct = w.x[k][1].copy()
+#       dct[t] = None
+#       muX, SigmaX = jpt.kalman.state_estimate(kf[k], dct)[t]
+#       muY, SigmaY = jpt.kalman.StateToObs(kf[k], muX, SigmaX)
+#       xtk, ytk, jtk = (muX, muY, None)
+#     return xtk, ytk, jtk
+#
+#   # make hmm, sample
+#   perms, pi, Psi, psi = jpt.hmm.build(t0, x0, ts, ks, val, costxx, costxy)
+#
+#   # S, q_new_given_old, q_old_given_new = jpt.hmm.ffbs(pi, Psi, psi)
+#   S, q_new_given_old, q_old_given_new = jpt.hmm.sample(pi, Psi, psi)
+#   print(S)
+#   print(f'q_old_given_new: {q_old_given_new:.2f}, q_new_given_old: {q_new_given_old:.2f}')
+#
+#   if len(w.ks) <= 4:
+#     None
+#     ## dsh: re-enable
+#     # print('inside switch')
+#     # ip.embed()
+#
+#   # edit w, z
+#   ## S indexes into perms; perms is wrt ks
+#   editDict_tkj = {}
+#   editDict_k = dict([(k, (w.x[k][0], {})) for k in ks])
+#   for idx, t in enumerate(ts):
+#     t = int(t)
+#     p = perms[S[idx]]
+#     for kOld_idx, kOld in enumerate(ks):
+#       kNew = ks[p[kOld_idx]]
+#       xtk, ytk, jtk = val(t, kNew)
+#       if jtk is None: editDict_k[kOld][1][t] = None; continue
+#       editDict_tkj[(t, kOld)] = jtk
+#       editDict_k[kOld][1][t] = xtk
+#   z_ = z.edit(editDict_tkj, kind='tkj', inplace=False)
+#   w_ = w.edit(editDict_k, kind='k', inplace=False)
+#
+#   # experiment: edit w_ again with gibbs sample
+#   w_, _, _, _ = update(o, y, w_, z_)
+#   # end experiment
+#
+#   return w_, z_, True, q_old_given_new - q_new_given_old
 
 def split(o, y, w, z):
   """ Sample a random split proposal for UniqueBijectiveAssociation, z. """
@@ -520,49 +659,61 @@ def possible_splits(z):
     for t in list(z.to(k).keys())[:-1]: splits.append( (k, t) )
   return splits
 
-def possible_switch_windows(o, z, reverse=False):
-  """ Get possible switch windows for two targets.
+def track_swap_begin_times(o, z):
+  # new: record 1 + time of first assocation in each track
+  # old: record 1 + time of second assocation in each track
+  times = [ None for k in range(len(z.ks)) ]
+  for idx, k in enumerate(z.ks):
+    zkt = list(z.to(k).keys())
+    assert len(zkt) >= 2, 'Track lengths must be >= 2'
+    # if zkt[1] != z.tE: times[idx] = (k, 1+zkt[1])
+    if zkt[0] != z.tE: times[idx] = (k, 1+zkt[0])
+  return times
 
-  Return is of the form [ (ks, t0, tsInside), ... ] for
-    targets k in ks
-    most recent per-target times t0 *outside* swap (corresponds to order of ks)
-    swap window times tsInside
-  """
-  windows = [ ]
-  for k1 in z.ks:
-    t1 = list(z.to(k1).keys())
-    if len(t1) < 2: continue
 
-    for k2 in z.ks:
-      if k1 == k2: continue
-      t2 = list(z.to(k2).keys())
-      if len(t2) < 2: continue
-
-      ts = np.sort(np.unique(t1 + t2))
-      if reverse: ts = ts[::-1]
-
-      # find smallest/largest time t which, "before" t, both have >= one obs
-      for t_ in ts:
-        if reverse:
-          t1_before = [ t for t in t1 if t <= t_ ]
-          t2_before = [ t for t in t2 if t <= t_ ]
-          t1_after = [ t for t in t1 if t > t_ ]
-          t2_after = [ t for t in t2 if t > t_ ]
-          if len(t1_after) == 0 or len(t2_after) == 0: continue
-          if len(t1_before) == 0 and len(t2_before) == 0: continue
-          t0 = None # TODO: implement
-
-        else:
-          t1_before = [ t for t in t1 if t < t_ ]
-          t2_before = [ t for t in t2 if t < t_ ]
-          t1_after = [ t for t in t1 if t >= t_ ]
-          t2_after = [ t for t in t2 if t >= t_ ]
-          if len(t1_before) == 0 or len(t2_before) == 0: continue
-          if len(t1_after) == 0 and len(t2_after) == 0: continue
-          t0 = np.array([max(t1_before), max(t2_before)])
-          tsInside = [ t for t in ts if t >= t_ ]
-        
-        windows.append( ( (k1, k2), t0, tsInside) )
-        # windows.append( (k1, k2, t_) )
-        return windows
-  return []
+# def possible_switch_windows(o, z, reverse=False):
+#   """ Get possible switch windows for two targets.
+#
+#   Return is of the form [ (ks, t0, tsInside), ... ] for
+#     targets k in ks
+#     most recent per-target times t0 *outside* swap (corresponds to order of ks)
+#     swap window times tsInside
+#   """
+#   windows = [ ]
+#   for k1 in z.ks:
+#     t1 = list(z.to(k1).keys())
+#     if len(t1) < 2: continue
+#
+#     for k2 in z.ks:
+#       if k1 == k2: continue
+#       t2 = list(z.to(k2).keys())
+#       if len(t2) < 2: continue
+#
+#       ts = np.sort(np.unique(t1 + t2))
+#       if reverse: ts = ts[::-1]
+#
+#       # find smallest/largest time t which, "before" t, both have >= one obs
+#       for t_ in ts:
+#         if reverse:
+#           t1_before = [ t for t in t1 if t <= t_ ]
+#           t2_before = [ t for t in t2 if t <= t_ ]
+#           t1_after = [ t for t in t1 if t > t_ ]
+#           t2_after = [ t for t in t2 if t > t_ ]
+#           if len(t1_after) == 0 or len(t2_after) == 0: continue
+#           if len(t1_before) == 0 and len(t2_before) == 0: continue
+#           t0 = None # TODO: implement
+#
+#         else:
+#           t1_before = [ t for t in t1 if t < t_ ]
+#           t2_before = [ t for t in t2 if t < t_ ]
+#           t1_after = [ t for t in t1 if t >= t_ ]
+#           t2_after = [ t for t in t2 if t >= t_ ]
+#           if len(t1_before) == 0 or len(t2_before) == 0: continue
+#           if len(t1_after) == 0 and len(t2_after) == 0: continue
+#           t0 = np.array([max(t1_before), max(t2_before)])
+#           tsInside = [ t for t in ts if t >= t_ ]
+#         
+#         windows.append( ( (k1, k2), t0, tsInside) )
+#         # windows.append( (k1, k2, t_) )
+#         return windows
+#   return []

@@ -36,8 +36,9 @@ def opts(ifile, dy, dx, **kwargs):
   param.dy = dy
   param.dx = dx
   param.ifile = ifile
-  param.F = kwargs.get('F', np.block([[eye, eye], [zer, eye]]))
-  # param.F = kwargs.get('F', np.block([[eye, zer], [zer, zer]]))
+  # hmm, random acceleration model damages switch statements
+  # param.F = kwargs.get('F', np.block([[eye, eye], [zer, eye]]))
+  param.F = kwargs.get('F', np.block([[eye, zer], [zer, zer]]))
   param.H = kwargs.get('H', np.block([[eye, zer]]))
 
   # fixed-K additions
@@ -281,61 +282,62 @@ def log_joint(o, y, w, z, **kwargs):
     x0=(o.prior.mu0, o.prior.Sigma0)
     ll += jpt.kalman.joint_ll(okf, x_tks, y_tks, x0)
 
+
   ### comment everything else out during testing
   # # noise observations
-  # nNoise = np.sum( [ len(v) for v in z.to(0).values() ] )
-  # ll += -10 * nNoise
-  #
-  #
-  # n_t = y.N #observations
-  # d_t = { t: 0 for t in y.ts } #detections
-  # f_t = { t: 0 for t in y.ts } #false alarms
-  #
-  # for t in y.ts:
-  #   d_t[t] = np.sum(z[t] > 0)
-  #   f_t[t] = np.sum(z[t] == 0)
-  #
-  # z_t = { t: 0 for t in y.ts } #track terminations
-  # for k in w.ks: z_t[ max(w.x[k][1].keys()) ] += 1
-  #
-  # e_t1 = { t: 0 for t in y.ts } #existing targets
-  # a_t = { t: 0 for t in y.ts } #new targets
-  # for k in z.ks:
-  #   minTime = min(z.to(k).keys())
-  #   maxTime = max(z.to(k).keys())
-  #
-  #   # new targets at time t
-  #   a_t[minTime] += 1
-  #
-  #   # targets at time t
-  #   for t in range(minTime, maxTime+1): e_t1[t] += 1
-  #
-  # logPz = np.log(o.param.pz)
-  # log1Pz = np.log(1 - o.param.pz)
-  # logPd = np.log(o.param.pd)
-  # log1Pd = np.log(1 - o.param.pd)
-  # logLambda_b = np.log(o.param.lambda_b)
-  # logLambda_f = np.log(o.param.lambda_f)
-  # for t in y.ts:
-  #   if t-1 in e_t1: et = e_t1[t-1]
-  #   else: et = 0
-  #   ct = et - z_t[t]
-  #   ut = ct + a_t[t] - d_t[t]
-  #
-  #   # # test: remove counts
-  #   ll += z_t[t] * logPz + ct * log1Pz
-  #   ll += d_t[t] * logPd + ut * log1Pd
-  #   ll += a_t[t] * logLambda_b
-  #   ll += f_t[t] * logLambda_f
-  #
-  # # Annotations, if any. 
-  # #   Note: don't need to explicitly add
-  # #     ll += consistent * log(1 - p_a)
-  # #   because log(1 - p_a) ~= 0 since we assume p_a = 1 - eps
-  # A = kwargs.get('A_pairwise', None)
-  # if A is None: return ll
-  # consistent, inconsistent = A.consistencyCounts(z)
-  # ll += inconsistent * o.param.log_pa
+  nNoise = np.sum( [ len(v) for v in z.to(0).values() ] )
+  ll += -10 * nNoise
+
+
+  n_t = y.N #observations
+  d_t = { t: 0 for t in y.ts } #detections
+  f_t = { t: 0 for t in y.ts } #false alarms
+
+  for t in y.ts:
+    d_t[t] = np.sum(z[t] > 0)
+    f_t[t] = np.sum(z[t] == 0)
+
+  z_t = { t: 0 for t in y.ts } #track terminations
+  for k in w.ks: z_t[ max(w.x[k][1].keys()) ] += 1
+
+  e_t1 = { t: 0 for t in y.ts } #existing targets
+  a_t = { t: 0 for t in y.ts } #new targets
+  for k in z.ks:
+    minTime = min(z.to(k).keys())
+    maxTime = max(z.to(k).keys())
+
+    # new targets at time t
+    a_t[minTime] += 1
+
+    # targets at time t
+    for t in range(minTime, maxTime+1): e_t1[t] += 1
+
+  logPz = np.log(o.param.pz)
+  log1Pz = np.log(1 - o.param.pz)
+  logPd = np.log(o.param.pd)
+  log1Pd = np.log(1 - o.param.pd)
+  logLambda_b = np.log(o.param.lambda_b)
+  logLambda_f = np.log(o.param.lambda_f)
+  for t in y.ts:
+    if t-1 in e_t1: et = e_t1[t-1]
+    else: et = 0
+    ct = et - z_t[t]
+    ut = ct + a_t[t] - d_t[t]
+
+    # # test: remove counts
+    ll += z_t[t] * logPz + ct * log1Pz
+    ll += d_t[t] * logPd + ut * log1Pd
+    ll += a_t[t] * logLambda_b
+    ll += f_t[t] * logLambda_f
+
+  # Annotations, if any. 
+  #   Note: don't need to explicitly add
+  #     ll += consistent * log(1 - p_a)
+  #   because log(1 - p_a) ~= 0 since we assume p_a = 1 - eps
+  A = kwargs.get('A_pairwise', None)
+  if A is None: return ll
+  consistent, inconsistent = A.consistencyCounts(z)
+  ll += inconsistent * o.param.log_pa
 
   return ll
 

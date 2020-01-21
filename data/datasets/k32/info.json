@@ -1,0 +1,8 @@
+{
+  "dataset": "k32",
+  "detections": "dets.csv",
+  "groundtruth": "gt.csv",
+  "detectionFormat": "mot2015",
+  "detectionType": "point2d",
+  "imagePath": ""
+}
