@@ -36,6 +36,8 @@ def main(args):
     param = dict(Q=okf.Q, R=okf.R, mu0=o.prior.mu0)
     w, z = tracker.init_assoc_greedy_dumb(y, param, maxK=args.maxK)
 
+  o.param.log_pa = np.log(0.01)
+
   # Load annotations, if any
   if not args.a_pairwise: A_pairwise = None
   else:
