@@ -7,4 +7,4 @@ from .tracking.observation import ImageObservationSet
 from .tracking.pointtracker import PointTracker
 
 from .inference import kalman, proposals, hmm
-from .utility import io, viz
+from .utility import io, viz, eval

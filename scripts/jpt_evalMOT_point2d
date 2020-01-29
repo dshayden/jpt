@@ -1,0 +1,64 @@
+#!/usr/bin/env python
+
+import argparse, du, numpy as np, json, jpt, os, pandas as pd
+import motmetrics as mm
+import matplotlib.pyplot as plt
+import IPython as ip
+
+def work(gt, sample):
+  w = jpt.io.mot15_point2d_to_tracks(sample)
+  if w is None: return None
+
+  acc = mm.MOTAccumulator(auto_id=True)
+
+  for t in w.ts:
+
+    gtK = [ k for k in gt.ks if t in gt.x[k][1] ]
+    wK = [ k for k in w.ks if t in w.x[k][1] ]
+
+    objects = np.array([v for v in gt[t].values()])
+    hypotheses = np.array([v for v in w[t].values()])
+    # distances = mm.distances.norm2squared_matrix(objects, hypotheses,
+    #   max_d2=2.0)
+    distances = mm.distances.norm2squared_matrix(objects, hypotheses,
+      max_d2=60.0)
+
+    acc.update(gtK, wK, distances)
+
+  mh = mm.metrics.create()
+  try:
+    summary = mh.compute(acc, metrics=mm.metrics.motchallenge_metrics,
+      name='acc')
+    return summary
+  except:
+    return None
+
+def main(args):
+  gt = jpt.io.mot15_point2d_to_tracks(args.gt)
+  for k in gt.x.keys():
+    xk = gt.x[k][1]
+    for t in xk.keys():
+      if k == 1: xk[t] += 0.1
+      else: xk[t] -= 0.1
+
+  pArgs = [ (gt, mf) for mf in args.motFiles ]
+
+  vals = du.For(work, pArgs)
+  # vals = du.Parfor(work, pArgs)
+  filtered_vals = [ v for v in vals if type(v) == pd.DataFrame ]
+  df = pd.concat(filtered_vals)
+  du.save(args.output, df)
+
+
+if __name__ == "__main__":
+  parser = argparse.ArgumentParser(description='')
+  parser.add_argument('gt', type=str,
+    help='Groundtruth MOT 2015 formatted file (2D points only, no BB)')
+  parser.add_argument('output', type=str,
+    help='Output dataframe')
+  parser.add_argument('motFiles', type=str, nargs='+',
+    help='Collection of MOT 2015 formatted sample files')
+  parser.set_defaults(func=main)
+
+  args = parser.parse_args()
+  args.func(args)

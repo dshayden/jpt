@@ -7,16 +7,52 @@ import du
 
 __mot2015 = ['Frame', 'ID', 'BBx', 'BBy', 'BBw', 'BBh', 'Score', 'x', 'y', 'z']
 
+# Save 2D observations into MOT 2015 formatted file
+def mot15_obs2d_to_mot15(fname, y, z=None):
+  fid = open(fname, 'w')
+  # if z is None: fstr = '{Frame}, -1, {x}, {y}, -1, -1, 1.0, -1, -1, -1'
+  for t in y.ts:
+    for n in range(y.N[t]):
+      x_, y_ = y[t][n]
+      if z is None:
+        print(f'{t}, -1, {x_:.2f}, {y_:.2f}, -1, -1, 1.0, -1, -1, -1', file=fid)
+      else:
+        ztn = z[t][n]
+        print(f'{t}, {ztn}, {x_:.2f}, {y_:.2f}, -1, -1, 1.0, -1, -1, -1', file=fid)
+  # todo: remove trailing newline
+  fid.close()
+
 # Load just 2D bbox corner points from MOT 2015 formatted file
 def mot15_point2d_to_obs(fname):
+  try: 
+    df = pd.read_csv(fname, names=__mot2015)
+    y = {}
+    uniq = df.Frame.unique()
+    for idx, t in enumerate(uniq):
+      dft = df[df.Frame == t]
+      obs = dft[ ['BBx', 'BBy'] ].values
+      y[t] = obs
+    return jpt.NdObservationSet(y)
+  except:
+    return None
+
+# used for simpler evaluation
+def mot15_point2d_to_tracks(fname):
   df = pd.read_csv(fname, names=__mot2015)
-  y = {}
+
+  x = {}
   uniq = df.Frame.unique()
   for idx, t in enumerate(uniq):
     dft = df[df.Frame == t]
-    obs = dft[ ['BBx', 'BBy'] ].values
-    y[t] = obs
-  return jpt.NdObservationSet(y)
+    t_ = int(t)
+
+    for _, row in dft.iterrows():
+      ID = int(row.ID)
+      if ID not in x: x[ID] = ( {}, {} ) # empty dictionary
+      x[ID][1][t_] = np.array((row.BBx, row.BBy))
+  w = jpt.AnyTracks(x)
+
+  return w
 
 # Load 2D bbox from MOT 2015 formatted file
 def mot15_bbox_to_obs(fname, **kwargs):

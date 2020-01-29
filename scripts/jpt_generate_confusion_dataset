@@ -1,0 +1,281 @@
+#!/usr/bin/env python
+
+import argparse, du, numpy as np, json, jpt, os, itertools
+from scipy.stats import multivariate_normal as mvn
+from scipy.special import logsumexp
+import copy, matplotlib.pyplot as plt
+import IPython as ip, sys
+
+# input json has the following fields:
+#
+# sigma is the observation noise (float), shared by all tracks. Can be 0.0
+#
+# dx is the (constant) motion per timestep
+# dy is the spacing between each target
+#
+# t_confuse_transition is the "wind-up" time for a confusion; at the last
+# timestep of t_confuse_transition, the targets will be entangled.
+#
+# t_confuse_inside is the time that targets spend inside a confusion event
+#
+# t_straight is the time that targets spend traveling when they are no
+# confusion events.
+#
+# order is an array of dimension L x K, where a row of 0s indicates no confusion
+# event among the K targets, while any row with nonzero entries indicates a
+# confusion event for the targets located at those indices in the previous
+# timestep. Only one confusion event at a time is supported, and the generated
+# groundtruth is only reasonable if confused targets are always pairwise
+# adjacent (i.e. 0110 is ok, but 1001 would cause targets to crossover,
+# polluting the "groundtruth"
+def main(args):
+  with open(args.json, 'r') as fid: D = json.load(fid)
+  sigma, dx, dy, t_straight, t_confuse_transition, t_confuse_inside = (
+    D['sigma'], D['dx'], D['dy'], D['t_straight'], D['t_confuse_transition'],
+    D['t_confuse_inside']
+  )
+  O = np.array(D['order'])
+  L, K = O.shape
+
+  confuse = np.zeros(L, dtype=np.bool)
+  outcomes = 1
+  for l in range(1,L):
+    outcomeCounts_l = np.sum(O[l] > 0)
+    if outcomeCounts_l > 0: confuse[l] = 1; outcomes *= np.math.factorial(outcomeCounts_l)
+  nConfuse = np.sum(confuse)
+  nNoConfuse = L - nConfuse
+  T = nConfuse * ( 2*t_confuse_transition + t_confuse_inside ) + nNoConfuse * t_straight
+  description = f'#Timesteps: {T}, #Outcomes: {outcomes}'
+  print(description)
+
+  adjustTimes = []
+
+  locs = np.zeros((T, K, 2))
+  prevLocs = np.array([ [ -dx, k*dy ] for k in range(K) ])
+  prevT = -1
+  for l in range(L):
+    if confuse[l]:
+      # handle confusion event
+      ## who's confused? -- note, assumes only 1 confusion event in this way
+      confusedIdx = np.where(O[l] != 0)[0]
+      straightIdx = np.setdiff1d(range(K), confusedIdx)
+
+      ## y location of confusion
+      mu = np.mean( prevLocs[confusedIdx, 1] )
+
+      ## change in y for each confused track, towards confusion
+      local_dy = np.zeros(K)
+      for i in confusedIdx:
+        local_dy[i] = ( mu - prevLocs[i,1] ) / t_confuse_transition
+
+      ## confusion prelude
+      for cnt, t in enumerate(range(prevT + 1, prevT + t_confuse_transition + 1)):
+        ### straight prop
+        locs[t,straightIdx,0] = prevLocs[straightIdx,0] + dx
+        locs[t,straightIdx,1] = prevLocs[straightIdx,1]
+
+        ### confused prop
+        locs[t,confusedIdx,0] = prevLocs[confusedIdx,0] + dx
+        for i in confusedIdx: 
+          # interpolate y location         
+          locs[t,i,1] = prevLocs[i,1] + local_dy[i]
+
+        prevLocs = locs[t]
+        prevT = t
+
+      adjustTimes.append( (l, prevT) )
+
+      ## confusion event -- everyone goes straight
+      for t in range(prevT + 1, prevT + t_confuse_inside + 1):
+        locs[t,:,0] = prevLocs[:,0] + dx
+        locs[t,:,1] = prevLocs[:,1]
+        prevLocs = locs[t]
+      prevT += t_confuse_inside
+
+      ## confusion epilogue
+      for cnt, t in enumerate(range(prevT + 1, prevT+t_confuse_transition+1)):
+        ### straight prop
+        locs[t,straightIdx,0] = prevLocs[straightIdx,0] + dx
+        locs[t,straightIdx,1] = prevLocs[straightIdx,1]
+
+        ### confused prop
+        locs[t,confusedIdx,0] = prevLocs[confusedIdx,0] + dx
+        for i in confusedIdx: 
+          # interpolate y location         
+          locs[t,i,1] = prevLocs[i,1] - local_dy[i]
+
+        prevLocs = locs[t]
+        prevT = t
+
+    else:
+      # handle straight event
+      for t in range(prevT + 1, prevT + t_straight + 1):
+        locs[t,:,0] = prevLocs[:,0] + dx
+        locs[t,:,1] = prevLocs[:,1]
+        prevLocs = locs[t]
+      prevT += t_straight
+
+  if not args.no_plot:
+    for k in range(K): plt.plot(locs[:,k,0], locs[:,k,1], color='k')
+    # for k in range(K): plt.plot(locs[:,k,0], locs[:,k,1])
+    plt.gca().set_aspect('equal', 'box')
+    plt.gca().set_xticks([]); plt.gca().set_yticks([])
+    if args.dataset_outpath:
+      outname = f'{args.dataset_outpath}/network.pdf'
+      plt.savefig(outname, bbox_inches='tight')
+      plt.close()
+    else:
+      plt.show()
+
+    # plt.show()
+    # plt.title(description)
+    # sys.exit()
+
+  # construct tracks from switch-free tracks, starting with a single hypothesis
+  firstT, lastT = (0, adjustTimes[0][1])
+
+  tracks = [ [-1*np.ones((len(adjustTimes)+1,K), dtype=np.int), locs[firstT:lastT].copy()], ]
+  tracks[0][0][0] = np.arange(K)
+  
+  for idx, (l, t) in enumerate(adjustTimes):
+    confusedIdx = np.where(O[l] > 0)[0] # indices into current state
+    nConfused_l = np.sum(confusedIdx)
+    unconfusedIdx = np.setdiff1d(np.arange(K), confusedIdx)
+    nextT = T if idx == len(adjustTimes)-1 else adjustTimes[idx+1][1]
+
+    newTracks = [ ]
+    for perm in itertools.permutations(range(len(confusedIdx))):
+      for (kIdx, track) in tracks:
+        kIdx = kIdx.copy()
+
+        kIdx[idx+1,unconfusedIdx] = kIdx[idx,unconfusedIdx]
+        kIdx[idx+1,confusedIdx] = kIdx[idx,confusedIdx[list(perm)]]
+
+        kmap = np.array([ np.where(kIdx[idx+1]==k)[0][0] for k in range(K) ])
+        track = np.concatenate((track, locs[t:nextT, kmap]), axis=0)
+        newTracks.append([kIdx, track])
+
+    tracks = newTracks
+
+  if not args.no_plot:
+    colors = du.diffcolors(outcomes, bgCols=[[0.0,0.0,0.0], [1.0,1.0,1.0]],
+      alpha=0.5)
+    for n, (kIdx, track) in enumerate(tracks):
+
+      # plot tracks with small amount of noise for better visualization
+      # just use observation noise for this, if it's non-zero
+      if not np.isclose(sigma, 0.0):
+        eps = np.random.randn(*track.shape[:2]) * sigma
+        noisyTrack = track.copy()
+        noisyTrack[:,:,1] += eps
+      else:
+        noisyTrack = track
+
+      for k in range(K):
+        plt.plot(noisyTrack[:,k,0], noisyTrack[:,k,1], color=colors[k],
+          linestyle='dotted')
+    plt.gca().set_aspect('equal', 'box')
+    plt.gca().set_xticks([])
+    plt.gca().set_yticks([])
+    if args.dataset_outpath:
+      outname = f'{args.dataset_outpath}/paths.pdf'
+      plt.savefig(outname, bbox_inches='tight')
+      plt.close()
+    else:
+      plt.show()
+
+  if args.dataset_outpath:
+    try: os.makedirs(f'{args.dataset_outpath}/true_samples')
+    except: pass
+    
+    # Generate observations y
+    y = [ locs[t].copy() for t in range(T) ]
+    if not np.isclose(sigma, 0.0): # sample y coordinates
+      for t in range(T):
+        for k in range(K):
+          y[t][k,1] = mvn.rvs( locs[t,k,1], sigma ) # think this needs sqrt?
+    N = { t+1: len(y[t]) for t in range(T) }
+    y_jpt = jpt.NdObservationSet({t+1: y[t] for t in range(T)})
+
+    # Save detections y as 2D MOT 2015
+    jpt.io.mot15_obs2d_to_mot15(f'{args.dataset_outpath}/dets.csv', y_jpt)
+
+    # Randomly sample one outcome as being the truth
+    trueOutcome = np.random.choice(range(outcomes))
+     
+    # Generate JPT-formatted trajectories
+    for nO in range(outcomes):
+      dct = {}
+      for k in range(K):
+        xtk = {}
+        for t in range(T): xtk[t+1] = tracks[nO][1][t,k]
+        dct[k+1] = ( {}, xtk )
+      w = jpt.AnyTracks(dct)
+
+      # Save groundtruth if we're at the appropriate index
+      if nO == trueOutcome:
+        gt_outstr = f'{args.dataset_outpath}/gt.csv'
+        jpt.io.point_tracks_to_mot15_point2d(gt_outstr, w)
+
+        if not args.no_plot:
+          colors = du.diffcolors(K, bgCols=[[0.0,0.0,0.0], [1.0,1.0,1.0]],
+            alpha=0.5)
+
+          noiselessTrack = tracks[nO][1]
+          for k in range(K):
+            plt.plot(noiselessTrack[:,k,0], noiselessTrack[:,k,1],
+              color=colors[k], linestyle='dotted')
+          plt.gca().set_aspect('equal', 'box')
+          plt.gca().set_xticks([]); plt.gca().set_yticks([])
+          gt_plot_outname = f'{args.dataset_outpath}/gt.pdf'
+          plt.savefig(gt_plot_outname, bbox_inches='tight')
+          plt.close()
+
+      # Save sample if we don't want associations
+      if args.nZ == 0:
+        outstr = f'{args.dataset_outpath}/true_samples/sample-{nO:05}'
+        jpt.io.save(outstr, {'w': w})
+
+      # Sample associations
+      for nS in range(args.nZ):
+        z = np.zeros((T, K), dtype=np.int)
+        for t in range(T):
+          xt_ = tracks[nO][1][t]
+
+          availableK = np.array([ k for k in range(K) ], dtype=np.int)
+          for n in range(K):
+            logp_ztn = np.zeros(len(availableK))
+            for idx, k in enumerate(availableK):
+              logp_ztn[idx] = mvn.logpdf(y[t][n][1], xt_[k,1], sigma)
+            p_ztn = np.exp(logp_ztn - logsumexp(logp_ztn) )
+            sampled_ind = du.stats.catrnd(p_ztn[np.newaxis])[0] 
+            ind = availableK[sampled_ind]
+            z[t,n] = ind
+            availableK = np.setdiff1d(availableK, [ind,])
+
+        # Generate JPT-formatted associations
+        jpt_z = jpt.UniqueBijectiveAssociation(N,
+          {t+1: z[t]+1 for t in range(T)})
+        
+        # Save sample
+        outstr = f'{args.dataset_outpath}/true_samples/sample-{nO:05}-{nS:05}'
+        jpt.io.save(outstr, {'w': w, 'z': jpt_z})
+
+        ## temporary: plot sample, to ensure it's doing the right thing
+        # w_ = jpt.io.load(outstr)['w']
+        # jpt.viz.plot_tracks2d_global(w_)
+        # plt.title(outstr)
+        # plt.show()
+            
+if __name__ == "__main__":
+  parser = argparse.ArgumentParser(description='')
+  parser.add_argument('json', type=str, help='Dataset specification')
+  parser.add_argument('--dataset_outpath', type=str, help='Directory to output dataset')
+  parser.add_argument('--nZ', type=int, default=1,
+    help='Number of joint association samples for each outcome')
+  parser.add_argument('--no_plot', action='store_true',
+		help="Don't draw or save any plots")
+  parser.set_defaults(func=main)
+
+  args = parser.parse_args()
+  args.func(args)

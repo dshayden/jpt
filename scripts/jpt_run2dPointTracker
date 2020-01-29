@@ -30,11 +30,11 @@ def main(args):
     kwargs = tracker.data_dependent_priors(y)
     kwargs['maxK'] = args.maxK
     o = tracker.opts(args.ifile, dy, dx, **kwargs)
-    # w, z = tracker.init_assoc_noise(y)
+    w, z = tracker.init_assoc_noise(y)
 
-    okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H)
-    param = dict(Q=okf.Q, R=okf.R, mu0=o.prior.mu0)
-    w, z = tracker.init_assoc_greedy_dumb(y, param, maxK=args.maxK)
+    # okf = jpt.kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H)
+    # param = dict(Q=okf.Q, R=okf.R, mu0=o.prior.mu0)
+    # w, z = tracker.init_assoc_greedy_dumb(y, param, maxK=args.maxK)
 
   o.param.log_pa = np.log(0.01)
 

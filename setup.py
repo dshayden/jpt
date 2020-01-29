@@ -33,6 +33,10 @@ setup(
       'scripts/jpt_samples2matlab',
       'scripts/jpt_drawDist_toy',
       'scripts/jpt_run2dPointTracker',
+      'scripts/jpt_generate_confusion_dataset',
+      'scripts/jpt_evalMOT_point2d',
+      'scripts/jpt_plot_mot',
+      'scripts/jpt_samples2mot_point2d'
     ],
     install_requires=install_reqs,
     dependency_links=[

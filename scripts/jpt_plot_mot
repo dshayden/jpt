@@ -1,0 +1,27 @@
+#!/usr/bin/env python
+
+import argparse, os
+import pandas as pd, matplotlib.pyplot as plt, du
+
+def main(args):
+  df = du.load(args.mot_dataframe)
+  nCol = len(df.columns)
+  dct = [ pd.DataFrame({'JPT': df.iloc[:,i]}) for i in range(nCol) ]
+  
+  try: os.makedirs(args.outdir)
+  except: pass
+
+  for n in range(nCol):
+    plt.figure()
+    dct[n].boxplot()
+    plt.title(df.columns[n])
+    plt.savefig(f'{args.outdir}/{df.columns[n]}.pdf', bbox_inches='tight')
+    plt.close()
+            
+if __name__ == "__main__":
+  parser = argparse.ArgumentParser(description='')
+  parser.add_argument('mot_dataframe', type=str, help='mot dataframe')
+  parser.add_argument('outdir', type=str, help='Name of output')
+  parser.set_defaults(func=main)
+  args = parser.parse_args()
+  args.func(args)

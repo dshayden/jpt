@@ -1,0 +1,31 @@
+#!/bin/sh
+
+dataset=data/datasets/synthetic_test
+mkdir $dataset
+mkdir $dataset/results
+nSamples=500
+K=3 # this must match the number of targets in $dataset/dataset.json
+
+sampleDir=$dataset/results/jpt_samples
+mot_csvDir=$dataset/results/jpt_mot_csvFiles
+mot_data=$dataset/results/jpt_motdata
+mot_plotDir=$dataset/results/jpt_motPlots
+
+# Make dataset
+scripts/jpt_generate_confusion_dataset $dataset/dataset.json --dataset_outpath $dataset
+
+# Run inference
+scripts/jpt_run2dPointTracker $dataset/dets.csv $sampleDir $nSamples --maxK $K
+
+# Uncomment to plot MOT metrics -- warning: expensive to run
+# # Convert samples to MOT files so we can evaluate performance
+# scripts/jpt_samples2mot_point2d $sampleDir $mot_csvDir
+#
+# # Evaluate MOT performance, save to $dataset/jpt_mot_metrics
+# scripts/jpt_evalMOT_point2d $dataset/gt.csv $mot_data $mot_csvDir/*
+#
+# # Plot MOT metrics, save to $dataset/jpt_mot_metrics
+# scripts/jpt_plot_mot $mot_data $mot_plotDir
+
+# Plot distribution visualization
+scripts/jpt_drawDist_toy $sampleDir $sampleDir/dist.pdf

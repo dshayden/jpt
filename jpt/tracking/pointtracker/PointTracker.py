@@ -5,6 +5,7 @@ import argparse
 import numpy as np, scipy.linalg as sla
 import du
 from scipy.stats import poisson
+from scipy.spatial.distance import cdist
 from sklearn.neighbors import NearestNeighbors
 
 import IPython as ip
@@ -393,3 +394,60 @@ def sample(o, y, w, z, ll, **kwargs):
     #   print(f'Rejected Switch: ll_prop: {ll_new:.2f}, ll_old: {ll:.2f}, logq: {logq:.2f}, logA: {logA:.2f}')
 
     return w, z, info
+
+def stlc_cost_matrix(p, q, lam):
+  # For AnyTracks p, q, compute cost matrix of size (K, K') where
+  #   p contains K tracks
+  #   q contains K' tracks
+  # Costs are computed as the Spatio-Temporal Linear Combine Distance
+  # with combine factor lam. See:
+  #   S. Shang, L. Chen, Z. Wei, C. S. Jensen, K. Zheng, and P. Kalnis.
+  #   Trajectory similarity join in spatial networks. Proceedings of the VLDB
+  #   Endowment, 10(11):1178–1189, 2017.
+
+  nTracks = [ len(tau.ks) for tau in (p, q) ]
+  size = [ float(len(tau.ts)) for tau in (p, q) ]
+
+  def dist_spatial(p, T):
+    # p is D-dim vector
+    # T is single trajectory
+    Tx = np.array([ T[t] for t in T.keys() ]) # get all latent states
+
+    # NOTE: hard-coded for 2D right here
+    dists = cdist( p[:2][np.newaxis], Tx[:,:2] ).squeeze()
+    return np.min(dists)
+
+  def dist_temporal(pt, T):
+    # p is float time
+    # T is single trajectory
+    Tt = np.array([ t for t in T.keys() ]) # get all latent states
+    dists = np.abs( Tt - pt )
+    # dists = cdist( np.array([pt])[np.newaxis], Tt ).squeeze()
+    return np.min(dists)
+
+  cost = np.zeros((nTracks[0], nTracks[1]))
+  for i in range(nTracks[0]):
+    for j in range(nTracks[1]):
+      k1, k2 = ( p.ks[i], q.ks[j] )
+      T1, T2 = ( p.x[k1][1], q.x[k2][1] )
+
+      # ip.embed()
+
+      sij1 = sij2 = tij1 = tij2 = 0.0
+
+      # spatial terms
+      for t in T1.keys(): sij1 += np.exp(-dist_spatial(T1[t], T2))
+      for t in T2.keys(): sij2 += np.exp(-dist_spatial(T2[t], T1))
+
+      # temporal terms
+      for t in T1.keys(): tij1 += np.exp(-dist_temporal(t, T2))
+      for t in T2.keys(): tij2 += np.exp(-dist_temporal(t, T1))
+
+      s_spa = (sij1 / size[0]) + (sij2 / size[1])
+      s_tem = (tij1 / size[0]) + (tij2 / size[1])
+
+      assert 0 <= s_spa and s_spa <= 2.0
+      assert 0 <= s_tem and s_tem <= 2.0
+      cost[i,j] = lam*s_spa + (1-lam)*s_tem
+
+  return cost

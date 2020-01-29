@@ -6,3 +6,4 @@ IPython
 du
 pycocotools
 scikit-learn
+motmetrics

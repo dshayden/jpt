@@ -48,6 +48,7 @@ def plot_tracks2d_global(w):
       xs, ys = ( (prevX[0], xtk[0]), (prevX[1], xtk[1]) )
       plt.plot(xs, ys, color=colors[cind])
       prevX = xtk
+  plt.gca().set_aspect('equal', 'box')
 
 def plot_points2d_global(y):
   """ Plot first two dims of all points in ObservationSet y. """
