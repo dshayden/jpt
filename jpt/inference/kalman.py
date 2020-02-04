@@ -157,7 +157,7 @@ def state_estimate(o, x, **kwargs):
 
   ## what's the latest time before Nones that we have an observation?
   firstT = [ t for t in tObs if t < minNone ]
-  assert len(firstT) > 0
+  assert len(firstT) >= 0
   firstT = max(firstT)
 
   # filter
