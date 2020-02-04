@@ -4,7 +4,6 @@ import scipy.stats, argparse, du
 import scipy.linalg as sla
 from scipy.stats import multivariate_normal as mvn
 from scipy.spatial.distance import mahalanobis
-import IPython as ip
 
 def opts(dy, dx, **kwargs):
   """ Create options struct for the filter. 
@@ -303,9 +302,95 @@ def ffbs(o, x, y, x0=None, return_ll=False, no_resample=False):
     # assert type(ll) == float
     assert type(llDenom) == np.float64
 
-
   if not return_ll: return x
   else: return x, ll
+
+# bit hacky, copy-pasted from ffbs in a hurry
+# for case of return_ll=True, no_resample=True, but with many x
+def ffbs_ll_many(o, x, y, x0=None):
+  # x: list of dictionary of {t: val} for all times with desired inference
+  # y: dictionary of {t: vals} for all times with at least one observation
+  # x0: (mu, Sigma) tuple signifying prior dist; very broad if not specified
+  assert np.all(np.linalg.eigvals(o.Q) > 0), "ffbs non-ergodic for degenerate Q"
+  ts = [ t for t in y ]
+  if x0 is None: x0 = ( np.zeros(o.dx), sla.block_diag(1e9*np.eye(o.dy), 100*np.eye(o.dy)) )
+  xPrev, PPrev = x0
+
+  obs = [ (t, yt) for t, yt in y.items() ]
+  nObs = len(obs)
+
+  # need to store #obs of filter values
+  xf = np.zeros((nObs, o.dx))
+  Pf = np.zeros((nObs, o.dx, o.dx))
+
+  # filter
+  tPrev = obs[0][0] - 1
+  for idx, (t, yt) in enumerate(obs):
+    tDelta = t-tPrev
+    xh, Ph = (xPrev.copy(), PPrev.copy())
+
+    # predict & update, powering up predict as much as needed
+    for t_ in range(tDelta): xh, Ph = predict(o, xh, Ph)
+    xf[idx], Pf[idx] = (xh, Ph)
+    for ytj in np.atleast_2d(yt):
+      xf[idx], Pf[idx], _ = filter(o, xf[idx], Pf[idx], ytj)
+    xPrev, PPrev, tPrev = ( xf[idx], Pf[idx], t )
+
+  nX = len(x)
+  ll = np.zeros(nX)
+  xs = np.zeros((nX, nObs, o.dx))
+
+  ts = [ ob[0] for ob in obs ]
+  # assert all([ x[t] is not None for t in ts ])
+  for n in range(nX):
+    xs[n, -1] = x[n][t]
+    ll[n] += mvn.logpdf(xs[n,-1], xf[-1], Pf[-1])
+  # assert type(ll) == np.float64
+
+
+  tNext = obs[-1][0]
+  for idx in reversed(range(nObs-1)):
+    t, j = obs[idx]
+    tDelta = tNext - t
+
+    # power up predict based on number of intervening timesteps
+    # can't just use kalman predict because the x_t is latent; so we pass F**d
+    # as the "H" of inferNormalNormal
+    d = tDelta
+    H = np.linalg.matrix_power(o.F, d)
+    Q_ = o.Q
+    for t_ in range(1, tDelta): Q_ = o.F.dot(Q_).dot(o.F.T) + o.Q 
+
+    # "Observation" is xs[idx+1] with mean F x_t, covariance Q (if no time gap)
+    #                                 else integrate out x_{t+1, .., x_{t+d-1}
+    # "Prior" is on joint x_t sample, with mean xf[idx], covariance Pf[idx]
+    #     
+    #           inferNormalNormal(y,     SigmaY, muX,     SigmaX,  H=None, b=None)
+    for n in range(nX):
+      mu, Sigma = inferNormalNormal(xs[n,idx+1], Q_, xf[idx], Pf[idx], H=H)
+      xs[n,idx] = x[n][t]
+      ll[n] += mvn.logpdf(xs[n,idx], mu, Sigma)
+    tNext = t
+
+
+  # handle denominators p(x_{t+1} | y_{1:t})
+  # llDenom = 0.0
+  llDenom = np.zeros(nX)
+  for idx, (t, yt) in enumerate(obs[:-1]):
+    tNext = obs[idx+1][0]
+    tDelta = tNext - t
+
+    xh, Ph = ( xf[idx].copy(), Pf[idx].copy() )
+    for t_ in range(tDelta): xh, Ph = predict(o, xh, Ph)
+
+    # pull from x, not xs, so we can just compute LL if desired
+    # llDenom += mvn.logpdf( x[tNext], xh, Ph ) # x_{t+1} == xs[idx+1]
+    xtNext = np.array([ x[n][tNext] for n in range(nX) ])
+    llDenom += mvn.logpdf(xtNext, xh, Ph)
+
+  ll -= llDenom
+
+  return ll
 
 def predictive(o, x, t):
   # get predictive distribution of x, y at time t

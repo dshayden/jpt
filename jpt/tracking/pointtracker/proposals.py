@@ -4,7 +4,6 @@ from scipy.special import logsumexp
 from scipy.stats import poisson
 import numpy as np, itertools
 import copy
-import IPython as ip
 
 def extend(o, y, w, z):
   # check that we have tracks to disperse

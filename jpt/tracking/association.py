@@ -3,7 +3,6 @@ from abc import ABC, abstractmethod
 import warnings
 from warnings import warn
 import copy
-import IPython as ip
 
 class Association(ABC):
   """ Stores an association event of targets to observations.

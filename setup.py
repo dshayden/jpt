@@ -36,7 +36,8 @@ setup(
       'scripts/jpt_generate_confusion_dataset',
       'scripts/jpt_evalMOT_point2d',
       'scripts/jpt_plot_mot',
-      'scripts/jpt_samples2mot_point2d'
+      'scripts/jpt_samples2mot_point2d',
+      'scripts/jpt_evalX_conditionalAll',
     ],
     install_requires=install_reqs,
     dependency_links=[

@@ -8,8 +8,6 @@ from scipy.stats import poisson
 from scipy.spatial.distance import cdist
 from sklearn.neighbors import NearestNeighbors
 
-import IPython as ip
-
 def opts(ifile, dy, dx, **kwargs):
   """ Construct PointTracker options.
 
@@ -408,17 +406,29 @@ def stlc_cost_matrix(p, q, lam):
   nTracks = [ len(tau.ks) for tau in (p, q) ]
   size = [ float(len(tau.ts)) for tau in (p, q) ]
 
-  def dist_spatial(p, T):
-    # p is D-dim vector
+  identify_track(p)
+  identify_track(q)
+
+  def dist_spatial(ps, T):
+    # ps is D-dim vector
     # T is single trajectory
     Tx = np.array([ T[t] for t in T.keys() ]) # get all latent states
 
     # NOTE: hard-coded for 2D right here
-    dists = cdist( p[:2][np.newaxis], Tx[:,:2] ).squeeze()
+    dists = cdist( ps[:2][np.newaxis], Tx[:,:2] ).squeeze()
     return np.min(dists)
 
+  def dist_spatial_debug(ps, T):
+    # ps is D-dim vector
+    # T is single trajectory
+    Tx = np.array([ T[t] for t in T.keys() ]) # get all latent states
+
+    # NOTE: hard-coded for 2D right here
+    dists = cdist( ps[:2][np.newaxis], Tx[:,:2] ).squeeze()
+    return np.min(dists), np.argmin(dists)
+
   def dist_temporal(pt, T):
-    # p is float time
+    # pt is float time
     # T is single trajectory
     Tt = np.array([ t for t in T.keys() ]) # get all latent states
     dists = np.abs( Tt - pt )
@@ -429,10 +439,8 @@ def stlc_cost_matrix(p, q, lam):
   for i in range(nTracks[0]):
     for j in range(nTracks[1]):
       k1, k2 = ( p.ks[i], q.ks[j] )
+
       T1, T2 = ( p.x[k1][1], q.x[k2][1] )
-
-      # ip.embed()
-
       sij1 = sij2 = tij1 = tij2 = 0.0
 
       # spatial terms
@@ -443,11 +451,92 @@ def stlc_cost_matrix(p, q, lam):
       for t in T1.keys(): tij1 += np.exp(-dist_temporal(t, T2))
       for t in T2.keys(): tij2 += np.exp(-dist_temporal(t, T1))
 
+
       s_spa = (sij1 / size[0]) + (sij2 / size[1])
       s_tem = (tij1 / size[0]) + (tij2 / size[1])
 
       assert 0 <= s_spa and s_spa <= 2.0
       assert 0 <= s_tem and s_tem <= 2.0
-      cost[i,j] = lam*s_spa + (1-lam)*s_tem
+      cost[i,j] = - ( lam*s_spa + (1-lam)*s_tem )
+
+  #     print(i,j,k1,k2,cost[i,j])
+  #     if i==0:
+  #       print(f'i={i}, j={j}\n  T1: {T1[1][:2]}\n  T2: {T2[1][:2]}\n  cost: {cost[i,j]:.2f}')
+  #
+  #       sdists1, sidx1 = zip(*[ dist_spatial_debug(T1[t], T2) for t in T1.keys() ])
+  #       sdists2, sidx2 = zip(*[ dist_spatial_debug(T2[t], T1) for t in T2.keys() ])
+  #
+  #       print('sidx1')
+  #       for tIdx, t_ in enumerate(T1.keys()):
+  #         T2Keys = list(T2.keys())
+  #         t2_ = T2Keys[sidx1[tIdx]]
+  #
+  #         print(f'p_{i}[{t_}] -> q_{j}[{t2_}], dist: {sdists1[tIdx]:.2f}')
+  #         print(T1[t_][:2])
+  #         print(T2[t2_])
+  #
+  #       # print(i,j, 'sidx1')
+  #       # print(sidx1)
+  #       #
+  #       # print('T1')
+  #       # print(T1)
+  #       #
+  #       # print('T2')
+  #       # print(T2)
+  #
+  #       # for t in T1.keys(): sij1 += np.exp(-dist_spatial(T1[t], T2))
+  #       # for t in T2.keys(): sij2 += np.exp(-dist_spatial(T2[t], T1))
+  #       # if j==2: ip.embed()
+  #
+  #
+  # # testing
+  # from scipy.optimize import linear_sum_assignment as lsa
+  # import matplotlib.pyplot as plt
+  # from matplotlib.lines import Line2D
+  #
+  # plt.subplot(2,1,1)
+  # jpt.viz.plot_tracks2d_global(p)
+  # colors = du.diffcolors(len(p.ks), alpha=0.5)
+  # # custom_lines = [ Line2D([0],[0],color=colors[k]) for k in range(len(p.ks)) ]
+  # custom_lines = reversed([Line2D([0],[0],color=colors[k])
+  #   for k in range(len(q.ks))])
+  # custom_strings = [ f'{k}' for k in range(len(p.ks)) ]
+  # plt.legend(custom_lines, custom_strings)
+  # plt.title('p')
+  # plt.xticks([]); plt.yticks([])
+  #
+  # plt.subplot(2,1,2)
+  # jpt.viz.plot_tracks2d_global(q)
+  # colors = du.diffcolors(len(q.ks), alpha=0.5)
+  # custom_lines = reversed([Line2D([0],[0],color=colors[k])
+  #   for k in range(len(q.ks))])
+  # custom_strings = [ f'{k}' for k in range(len(q.ks)) ]
+  # plt.legend(custom_lines, custom_strings)
+  # plt.title('q')
+  # plt.xticks([]); plt.yticks([])
+  #
+  # plt.figure()
+  # plt.imshow(cost)
+  # plt.xlabel('q'); plt.ylabel('p')
+  # # plt.xlabel('p'); plt.ylabel('q') # intentionally bad ordering to diagnose
+  # plt.xticks(range(len(q.ks)))
+  # plt.yticks(range(len(p.ks)))
+  # plt.colorbar()
+  #
+  # rows, cols = lsa(cost)
+  # for r, c in zip(rows, cols):
+  #   plt.scatter(r, c, s=1.0, c='k')
+  #
+  # plt.show()
+  # sys.exit()
 
   return cost
+
+def identify_track(w):
+  # order AnyTracks w based on y-position of first location of each track
+  ks = np.array(w.ks)
+  if len(ks) <= 1: return
+  kt = { k: min(w.x[k][1].keys()) for k in w.ks }
+  ky = [ w.x[k][1][kt[k]][1] for k in w.ks ]
+  new_ks = [ int(v) for v in ks[np.argsort(ky)] ]
+  w.ks = new_ks

@@ -1,0 +1,74 @@
+#!/usr/bin/env python
+import matplotlib
+matplotlib.use("Agg")
+import argparse, numpy as np, sys
+from du import Parfor, For, ParforT
+import du
+from jpt.utility.io import load as jpt_load
+from jpt import kalman as jpt_kalman
+import functools
+
+def work(o, y, K, DZ, samples):
+  ll = np.zeros(len(samples))
+  z = DZ['z']
+  for k in range(1, K+1):
+    zk = z.to(k)
+    ts_k = zk.keys()
+    xk = [ dict([ (t, s['w'].x[k][1][t]) for t in ts_k]) for s in samples ]
+
+    yk = dict([(t, y[t][zk[t]]) for t in ts_k])
+    x0 = ( o.prior.mu0, o.prior.Sigma0 )
+    theta = DZ['w'].x[k][0] # assume single theta for all
+    okf = jpt_kalman.opts(o.param.dy, o.param.dx, F=o.param.F, H=o.param.H,
+      Q=theta['Q'], R=theta['R'])
+    ll_x = jpt_kalman.ffbs_ll_many(okf, xk, yk, x0)
+    ll += ll_x
+  return ll
+
+def load_xz(fpath):
+  D = jpt_load(fpath)
+  return {'w': D['w'], 'z': D['z']}
+
+def main(args):
+  # load all samples
+  # D = ParforT(load_xz, args.samples)
+  D = ParforT(load_xz, args.samples[:10])
+
+  nSamples = len(D)
+  for n in range(nSamples):
+    assert np.array_equal(D[0]['z'].ks, D[n]['z'].ks), \
+      'All samples MUST have same number of targets and same target indices'
+
+  # get y from one of the samples
+  dummySample = jpt_load(args.samples[0])
+  y, o = ( dummySample['y'], dummySample['o'] )
+  pWork = functools.partial(work, o, y, args.K)
+
+  # make jobs, one for each z with all samples (including itself)
+  pArgs = [ (D[i], D) for i in range(len(D)) ]
+  lls = Parfor(pWork, pArgs, showProgress=False)
+
+  # prints lls in the order of:
+  #   log p(x_1 | z_1, y)
+  #   log p(x_2 | z_1, y)
+  #   ...
+  #   log p(x_1000 | z_1, y)
+  #   log p(x_1 | z_2, y)
+  #   log p(x_2 | z_2, y)
+  #   ...
+  #   log p(x_1000 | z_2, y)
+  #   ...
+  #   ...
+  #   log p(x_1000 | z_1000, y)
+  llsFlat = np.array(lls).flatten()
+  np.savetxt(sys.stdout, llsFlat)
+
+if __name__ == "__main__":
+  parser = argparse.ArgumentParser(description='')
+  parser.add_argument('K', type=int, help='Number of targets for all samples.')
+  parser.add_argument('samples', type=str, nargs='+',
+    help='Filepaths of all samples.')
+  parser.set_defaults(func=main)
+
+  args = parser.parse_args()
+  args.func(args)

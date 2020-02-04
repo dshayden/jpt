@@ -50,8 +50,6 @@ class AnyTracks(Tracks, jpt.Serializable):
       self.t0, self.tE = (-1, -1)
 
   def edit(self, e, kind='k', inplace=False):
-    # import IPython as ip
-    # ip.embed()
     w = self if inplace else copy.deepcopy(self)
     if kind == 'k':
       for k, v in e.items():
