@@ -309,7 +309,9 @@ def log_joint(o, y, w, z, **kwargs):
     a_t[minTime] += 1
 
     # targets at time t
-    for t in range(minTime, maxTime+1): e_t1[t] += 1
+    # for t in range(minTime, maxTime+1): e_t1[t] += 1
+    for t in range(minTime, maxTime+1):
+      if t in e_t1: e_t1[t] += 1
 
   logPz = np.log(o.param.pz)
   log1Pz = np.log(1 - o.param.pz)
@@ -354,8 +356,8 @@ def sample(o, y, w, z, ll, **kwargs):
   info['move'] = np.random.choice(o.param.moveNames, p=o.param.moveProbs)
   logq = 0.0
 
-  # if info['move'] in ['switch', 'update']: doAcceptTest = False
-  if info['move'] in ['update',]: doAcceptTest = False
+  if info['move'] in ['switch', 'update']: doAcceptTest = False
+  # if info['move'] in ['update',]: doAcceptTest = False
   else: doAcceptTest = True
 
   # print(f"Trying {info['move']}")
