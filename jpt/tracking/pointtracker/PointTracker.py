@@ -386,13 +386,22 @@ def sample(o, y, w, z, ll, **kwargs):
   ll_new = log_joint(o, y, w_, z_, A_pairwise=A_pairwise)
   logA = ll_new - ll + logq
   info.update(logA=logA, ll_prop=ll_new, ll_old=ll, logq=logq)
-  if not doAcceptTest or logA > 0 or np.random.rand() <= np.exp(logA):
+
+  # poor man's annotation aware switch
+  if A_pairwise is not None and info['move'] == 'switch':
+    numInconsistentNew = A_pairwise.consistencyCount(z_)
+    numInconsistentOld = A_pairwise.consistencyCount(z)
+    switchBad = numInconsistentNew > numInconsistentOld
+  else:
+    switchBad = False
+
+  # if not doAcceptTest or logA > 0 or np.random.rand() <= np.exp(logA):
+  if (not doAcceptTest and not switchBad) or logA > 0 or np.random.rand() <= np.exp(logA):
     info['accept'] = True
     return w_, z_, info
   else:
     # if info['move'] == 'switch':
     #   print(f'Rejected Switch: ll_prop: {ll_new:.2f}, ll_old: {ll:.2f}, logq: {logq:.2f}, logA: {logA:.2f}')
-
     return w, z, info
 
 def stlc_cost_matrix(p, q, lam):
