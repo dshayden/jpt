@@ -389,8 +389,8 @@ def sample(o, y, w, z, ll, **kwargs):
 
   # poor man's annotation aware switch
   if A_pairwise is not None and info['move'] == 'switch':
-    numInconsistentNew = A_pairwise.consistencyCount(z_)
-    numInconsistentOld = A_pairwise.consistencyCount(z)
+    numInconsistentNew = A_pairwise.consistencyCounts(z_)
+    numInconsistentOld = A_pairwise.consistencyCounts(z)
     switchBad = numInconsistentNew > numInconsistentOld
   else:
     switchBad = False
